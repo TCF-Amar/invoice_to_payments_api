@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
-import prisma from '../utils/prisma';
-import { ApiError, ApiResponse, asyncHandler } from '../utils/helpers';
+import prisma from '../utils/prisma.js';
+import { ApiError, ApiResponse, asyncHandler } from '../utils/helpers.js';
 
 // ─── Schemas ──────────────────────────────────────────
 const createPOSchema = z.object({

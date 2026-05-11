@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import * as vendorCtrl  from '../controllers/vendor.controller';
-import * as poCtrl      from '../controllers/po.controller';
-import * as invoiceCtrl from '../controllers/invoice.controller';
-import * as paymentCtrl from '../controllers/payment.controller';
+import * as vendorCtrl  from '../controllers/vendor.controller.js';
+import * as poCtrl      from '../controllers/po.controller.js';
+import * as invoiceCtrl from '../controllers/invoice.controller.js';
+import * as paymentCtrl from '../controllers/payment.controller.js';
 
 const router = Router();
 

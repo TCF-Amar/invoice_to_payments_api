@@ -4,8 +4,8 @@ import helmet  from 'helmet';
 import morgan  from 'morgan';
 import dotenv  from 'dotenv';
 
-import router              from './routes/index';
-import { errorMiddleware } from './middleware/error.middleware';
+import router              from './routes/index.js';
+import { errorMiddleware } from './middleware/error.middleware.js';
 
 dotenv.config();
 
