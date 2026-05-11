@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import * as vendorCtrl  from '../controllers/vendor.controller.js';
-import * as poCtrl      from '../controllers/po.controller.js';
+import * as vendorCtrl from '../controllers/vendor.controller.js';
+import * as poCtrl from '../controllers/po.controller.js';
 import * as invoiceCtrl from '../controllers/invoice.controller.js';
 import * as paymentCtrl from '../controllers/payment.controller.js';
 
@@ -16,13 +16,13 @@ const router = Router();
 // PATCH  /api/v1/vendors/:id            → update vendor
 // DELETE /api/v1/vendors/:id            → delete vendor
 
-router.get   ('/vendors',                vendorCtrl.getAllVendors);
-router.get   ('/vendors/by-name/:name',   vendorCtrl.getVendorByName);
-router.get   ('/vendors/by-email/:email', vendorCtrl.getVendorByEmail);
-router.get   ('/vendors/:id',             vendorCtrl.getVendorById);
-router.post  ('/vendors',               vendorCtrl.createVendor);
-router.patch ('/vendors/:id',           vendorCtrl.updateVendor);
-router.delete('/vendors/:id',           vendorCtrl.deleteVendor);
+router.get   ('/vendors',                              vendorCtrl.getAllVendors);
+router.get   ('/vendors/by-name/:name',                 vendorCtrl.getVendorByName);
+router.get   ('/vendors/by-email/:email',               vendorCtrl.getVendorByEmail);
+router.get   ('/vendors/:id',                           vendorCtrl.getVendorById);
+router.post  ('/vendors',                               vendorCtrl.createVendor);
+router.patch ('/vendors/:id',                           vendorCtrl.updateVendor);
+router.delete('/vendors/:id',                           vendorCtrl.deleteVendor);
 
 // ════════════════════════════════════════════════════
 // PURCHASE ORDER ROUTES
@@ -66,6 +66,12 @@ router.patch ('/invoices/:id',                          invoiceCtrl.updateInvoic
 router.patch ('/invoices/:id/status',                   invoiceCtrl.updateInvoiceStatus); // ← n8n verdict
 router.delete('/invoices/:id',                          invoiceCtrl.deleteInvoice);
 
+// n8n automation helpers
+router.post  ('/invoices/:id/create-payment-intent',    invoiceCtrl.createPaymentIntent);
+router.patch ('/invoices/:id/payment-pending',         invoiceCtrl.markPaymentPending);
+router.patch ('/invoices/:id/mark-failed',              invoiceCtrl.markFailed);
+router.patch ('/invoices/stripe/payment-success',       invoiceCtrl.stripePaymentSuccess);
+
 // ════════════════════════════════════════════════════
 // PAYMENT ROUTES
 // ════════════════════════════════════════════════════
@@ -73,8 +79,8 @@ router.delete('/invoices/:id',                          invoiceCtrl.deleteInvoic
 // POST   /api/v1/payments                     → create payment (Stripe webhook)
 // PATCH  /api/v1/payments/:id/status          → update status (Stripe confirm)
 
-router.get   ('/payments/invoice/:invoiceId', paymentCtrl.getPaymentsByInvoice);
-router.post  ('/payments',                    paymentCtrl.createPayment);
-router.patch ('/payments/:id/status',         paymentCtrl.updatePaymentStatus);
+router.get   ('/payments/invoice/:invoiceId',           paymentCtrl.getPaymentsByInvoice);
+router.post  ('/payments',                              paymentCtrl.createPayment);
+router.patch ('/payments/:id/status',                   paymentCtrl.updatePaymentStatus);
 
 export default router;

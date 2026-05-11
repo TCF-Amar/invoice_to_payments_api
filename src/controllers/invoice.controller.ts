@@ -246,6 +246,97 @@ export const updateInvoice = asyncHandler(async (req: Request, res: Response) =>
   });
 
   return res.json(new ApiResponse(200, 'Invoice updated', invoice));
+
+import Stripe from 'stripe';
+const stripe = new Stripe(process.env.STRIPE_SECRATE || '');
+
+// ─── Automation Helpers (n8n use karta hai) ───────────
+
+// 1. Create Payment Intent
+export const createPaymentIntent = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { amount, currency } = req.body;
+
+  // 1. Create Stripe Payment Intent
+  const intent = await stripe.paymentIntents.create({
+    amount: Math.round(Number(amount) * 100), // Convert to cents
+    currency: currency || 'usd',
+    metadata: { invoiceId: id }
+  });
+
+  // 2. Create Payment record in DB
+  const payment = await prisma.payment.create({
+    data: {
+      invoiceId: id,
+      amountPaid: amount,
+      currency: currency || 'USD',
+      status: 'processing',
+      stripeId: intent.id
+    }
+  });
+
+  return res.json(new ApiResponse(200, 'Stripe Payment Intent created', {
+    paymentId: payment.id,
+    paymentIntentId: intent.id,
+    clientSecret: intent.client_secret
+  }));
+});
+
+// 2. Mark Payment Pending
+export const markPaymentPending = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  await prisma.invoice.update({
+    where: { id },
+    data: { status: 'payment_processing' }
+  });
+  return res.json(new ApiResponse(200, 'Invoice status updated to processing', null));
+});
+
+// 3. Mark Failed
+export const markFailed = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { failureReason } = req.body;
+  
+  await prisma.invoice.update({
+    where: { id },
+    data: { status: 'approved', notes: failureReason }
+  });
+  
+  return res.json(new ApiResponse(200, 'Invoice reverted to approved', null));
+});
+
+// 4. Stripe Payment Success (Called by webhook)
+export const stripePaymentSuccess = asyncHandler(async (req: Request, res: Response) => {
+  const { stripePaymentIntentId, amountReceived } = req.body;
+
+  const payment = await prisma.payment.findFirst({
+    where: { stripeId: stripePaymentIntentId }
+  });
+
+  if (payment) {
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: 'paid', paidAt: new Date() }
+    });
+
+    if (payment.invoiceId) {
+      const invoice = await prisma.invoice.findUnique({ where: { id: payment.invoiceId } });
+      if (invoice) {
+        const newTotalPaid = Number(invoice.amountPaid) + (amountReceived / 100);
+        await prisma.invoice.update({
+          where: { id: payment.invoiceId },
+          data: { 
+            status: 'paid', 
+            amountPaid: newTotalPaid,
+            amountDue: Math.max(0, Number(invoice.totalAmount) - newTotalPaid)
+          }
+        });
+      }
+    }
+  }
+
+  return res.json(new ApiResponse(200, 'Payment success recorded', null));
+});
 });
 
 // ─── Delete Invoice ───────────────────────────────────
