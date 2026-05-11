@@ -35,43 +35,70 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
   if (!invoice) throw new ApiError(404, 'Invoice not found');
   if (invoice.status === 'paid') throw new ApiError(400, 'Invoice already paid');
 
-  const payment = await prisma.payment.create({
-    data: {
-      ...data,
-      poId:   invoice.matchedPoId ?? undefined,
-      paidAt: ['paid','completed'].includes(data.status) ? new Date() : null,
+  // Check if payment already exists (e.g. created by createPaymentIntent)
+  let payment;
+  if (data.stripeId) {
+    payment = await prisma.payment.findFirst({
+      where: { stripeId: data.stripeId }
+    });
+  }
+
+  const isNew = !payment;
+  if (payment) {
+    // If already paid, don't process again
+    if (['paid', 'completed'].includes(payment.status)) {
+      return res.json(new ApiResponse(200, 'Payment already recorded as paid', payment));
     }
-  });
 
-  // Update invoice amountPaid
-  const newAmountPaid = Number(invoice.amountPaid) + data.amountPaid;
-  const totalAmount   = Number(invoice.totalAmount);
-  const isPaid        = newAmountPaid >= totalAmount;
+    payment = await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        ...data,
+        poId: invoice.matchedPoId ?? undefined,
+        paidAt: ['paid', 'completed'].includes(data.status) ? new Date() : null,
+      }
+    });
+  } else {
+    payment = await prisma.payment.create({
+      data: {
+        ...data,
+        poId: invoice.matchedPoId ?? undefined,
+        paidAt: ['paid', 'completed'].includes(data.status) ? new Date() : null,
+      }
+    });
+  }
 
-  await prisma.invoice.update({
-    where: { id: data.invoiceId },
-    data: {
-      amountPaid: newAmountPaid,
-      amountDue:  Math.max(0, totalAmount - newAmountPaid),
-      status:     isPaid ? 'paid' : 'payment_processing'
-    }
-  });
+  // Update invoice amountPaid (Only if this payment is becoming 'paid' or 'completed')
+  if (['paid', 'completed'].includes(data.status)) {
+    const newAmountPaid = Number(invoice.amountPaid) + data.amountPaid;
+    const totalAmount = Number(invoice.totalAmount);
+    const isPaid = newAmountPaid >= totalAmount;
 
-  // Update PO remaining amount
-  if (invoice.matchedPoId) {
-    const po = await prisma.purchaseOrder.findUnique({
-      where: { id: invoice.matchedPoId }
+    await prisma.invoice.update({
+      where: { id: data.invoiceId },
+      data: {
+        amountPaid: newAmountPaid,
+        amountDue: Math.max(0, totalAmount - newAmountPaid),
+        status: isPaid ? 'paid' : 'payment_processing'
+      }
     });
 
-    if (po) {
-      const newRemaining = Math.max(0, Number(po.remainingAmount) - data.amountPaid);
-      await prisma.purchaseOrder.update({
-        where: { id: po.id },
-        data: {
-          remainingAmount: newRemaining,
-          status: newRemaining <= 0 ? 'closed' : po.status
-        }
+    // Update PO remaining amount
+    if (invoice.matchedPoId) {
+      const po = await prisma.purchaseOrder.findUnique({
+        where: { id: invoice.matchedPoId }
       });
+
+      if (po) {
+        const newRemaining = Math.max(0, Number(po.remainingAmount) - data.amountPaid);
+        await prisma.purchaseOrder.update({
+          where: { id: po.id },
+          data: {
+            remainingAmount: newRemaining,
+            status: newRemaining <= 0 ? 'closed' : po.status
+          }
+        });
+      }
     }
   }
 
@@ -79,16 +106,17 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
   await prisma.auditLog.create({
     data: {
       entityType: 'payment',
-      entityId:   payment.id,
-      eventType:  'payment_created',
-      actor:      'stripe',
-      invoiceId:  data.invoiceId,
-      paymentId:  payment.id,
-      metadata:   { amountPaid: data.amountPaid, stripeId: data.stripeId } as any
+      entityId: payment.id,
+      eventType: isNew ? 'payment_created' : 'payment_updated',
+      actor: 'stripe',
+      invoiceId: data.invoiceId,
+      paymentId: payment.id,
+      metadata: { amountPaid: data.amountPaid, stripeId: data.stripeId, status: data.status } as any
     }
   });
 
-  return res.status(201).json(new ApiResponse(201, 'Payment recorded', payment));
+  return res.status(isNew ? 201 : 200)
+    .json(new ApiResponse(200, 'Payment recorded', payment));
 });
 
 // ─── Update Payment Status (Stripe webhook) ───────────
@@ -99,23 +127,58 @@ export const updatePaymentStatus = asyncHandler(async (req: Request, res: Respon
     failureReason: z.string().optional(),
   }).parse(req.body);
 
-  const payment = await prisma.payment.update({
-    where: { id: req.params.id as string },
+  let payment;
+  if (req.params.id && req.params.id !== 'undefined') {
+    payment = await prisma.payment.findUnique({
+      where: { id: req.params.id as string },
+      include: { invoice: true }
+    });
+  } else if (stripeId) {
+    payment = await prisma.payment.findFirst({
+      where: { stripeId: stripeId as string },
+      include: { invoice: true }
+    });
+  }
+
+  if (!payment) throw new ApiError(404, 'Payment record not found');
+
+  const oldStatus = payment.status;
+  const updatedPayment = await prisma.payment.update({
+    where: { id: payment.id },
     data: {
       status,
-      stripeId:      stripeId      ?? undefined,
+      stripeId: stripeId ?? undefined,
       failureReason: failureReason ?? null,
-      paidAt: ['paid','completed'].includes(status) ? new Date() : undefined,
+      paidAt: ['paid', 'completed'].includes(status) ? new Date() : undefined,
     }
   });
+
+  // If newly paid → update invoice
+  if (['paid', 'completed'].includes(status) && !['paid', 'completed'].includes(oldStatus)) {
+    if (payment.invoice) {
+      const amountPaid = Number(payment.amountPaid || 0);
+      const newTotalPaid = Number(payment.invoice.amountPaid) + amountPaid;
+      const totalAmount = Number(payment.invoice.totalAmount);
+      const isPaid = newTotalPaid >= totalAmount;
+
+      await prisma.invoice.update({
+        where: { id: payment.invoice.id },
+        data: {
+          status: isPaid ? 'paid' : 'payment_processing',
+          amountPaid: newTotalPaid,
+          amountDue: Math.max(0, totalAmount - newTotalPaid)
+        }
+      });
+    }
+  }
 
   // If failed → revert invoice status
   if (status === 'failed' && payment.invoiceId) {
     await prisma.invoice.update({
       where: { id: payment.invoiceId },
-      data:  { status: 'approved' } // back to approved for retry
+      data: { status: 'approved' } // back to approved for retry
     });
   }
 
-  return res.json(new ApiResponse(200, 'Payment status updated', payment));
+  return res.json(new ApiResponse(200, 'Payment status updated', updatedPayment));
 });
