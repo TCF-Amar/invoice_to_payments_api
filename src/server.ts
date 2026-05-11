@@ -1,15 +1,15 @@
 import express from 'express';
-import cors    from 'cors';
-import helmet  from 'helmet';
-import morgan  from 'morgan';
-import dotenv  from 'dotenv';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import dotenv from 'dotenv';
 
-import router              from './routes/index.js';
+import router from './routes/index.js';
 import { errorMiddleware } from './middleware/error.middleware.js';
 
 dotenv.config();
 
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── Middlewares ──────────────────────────────────────
