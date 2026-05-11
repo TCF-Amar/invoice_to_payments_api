@@ -6,11 +6,12 @@ export class ApiError extends Error {
   constructor(statusCode: number, message: string, errors: any[] = []) {
     super(message);
     this.statusCode = statusCode;
-    this.errors     = errors;
-    this.name       = 'ApiError';
+    this.errors = errors;
+    this.name = 'ApiError';
     Error.captureStackTrace(this, this.constructor);
   }
 }
+
 
 // ─── API Response ─────────────────────────────────────
 export class ApiResponse<T> {
@@ -20,10 +21,10 @@ export class ApiResponse<T> {
   data: T;
 
   constructor(statusCode: number, message: string, data: T) {
-    this.success    = statusCode < 400;
+    this.success = statusCode < 400;
     this.statusCode = statusCode;
-    this.message    = message;
-    this.data       = data;
+    this.message = message;
+    this.data = data;
   }
 }
 

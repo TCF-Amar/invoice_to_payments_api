@@ -11,6 +11,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:studio": "prisma studio",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "node --loader ts-node/esm prisma/seed.ts",
     "postinstall": "prisma generate",
     "build": "tsc"
   },
