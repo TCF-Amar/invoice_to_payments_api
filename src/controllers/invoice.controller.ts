@@ -113,22 +113,36 @@ export const getInvoiceByNumber = asyncHandler(async (req: Request, res: Respons
 
 // ─── Get Approved Unpaid (Daily cron n8n use karta hai)
 export const getApprovedUnpaid = asyncHandler(async (req: Request, res: Response) => {
-  const invoices = await prisma.invoice.findMany({
-    where: {
-      status: 'approved',
-      payments: {
-        none: { status: { in: ['paid', 'completed'] } }
-      }
-    },
-    include: {
-      vendor: { select: { id: true, name: true, email: true } },
-      matchedPo: { select: { id: true, poNumber: true, remainingAmount: true } },
-      payments: true
-    },
-    orderBy: { updatedAt: 'asc' }
-  });
+  const { page = '1', limit = '10' } = req.query;
 
-  return res.json(new ApiResponse(200, 'Approved unpaid invoices', invoices));
+  const where = {
+    status: 'approved',
+    payments: {
+      none: { status: { in: ['paid', 'completed'] } }
+    }
+  };
+
+  const [invoices, total] = await Promise.all([
+    prisma.invoice.findMany({
+      where,
+      skip: (Number(page) - 1) * Number(limit),
+      take: Number(limit),
+      include: {
+        vendor: { select: { id: true, name: true, email: true } },
+        matchedPo: { select: { id: true, poNumber: true, remainingAmount: true } },
+        payments: true
+      },
+      orderBy: { updatedAt: 'asc' }
+    }),
+    prisma.invoice.count({ where })
+  ]);
+
+  return res.json(new ApiResponse(200, 'Approved unpaid invoices', {
+    invoices,
+    total,
+    page: Number(page),
+    totalPages: Math.ceil(total / Number(limit))
+  }));
 });
 
 // ─── Check Duplicate (n8n use karta hai) ─────────────
