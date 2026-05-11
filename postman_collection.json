@@ -1,0 +1,232 @@
+{
+	"info": {
+		"_postman_id": "7f6e5d4c-3b2a-1a0b-9c8d-7e6f5d4c3b2a",
+		"name": "Invoice-to-Payment API",
+		"description": "API for managing vendors, purchase orders, invoices, and payments.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/health",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"health"
+					]
+				}
+			}
+		},
+		{
+			"name": "Vendors",
+			"item": [
+				{
+					"name": "Get All Vendors",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{api_url}}/vendors",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"vendors"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Vendor By Name",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{api_url}}/vendors/by-name/Acme Supplies Ltd.",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"vendors",
+								"by-name",
+								"Acme Supplies Ltd."
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Vendor",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Global Tech Solutions\",\n  \"email\": \"billing@globaltech.com\",\n  \"phone\": \"+1-202-555-0199\",\n  \"address\": \"456 Tech Park, San Francisco CA 94103\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/vendors",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"vendors"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Purchase Orders",
+			"item": [
+				{
+					"name": "Get All POs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{api_url}}/purchase-orders",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get PO By Number",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{api_url}}/purchase-orders/by-number/PO-445",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders",
+								"by-number",
+								"PO-445"
+							]
+						}
+					}
+				},
+				{
+					"name": "Create PO",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"poNumber\": \"PO-999\",\n  \"vendorId\": \"PASTE_VENDOR_ID_HERE\",\n  \"approvedAmount\": 5000,\n  \"currency\": \"USD\",\n  \"description\": \"Server components\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/purchase-orders",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Invoices",
+			"item": [
+				{
+					"name": "Get All Invoices",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{api_url}}/invoices",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices"
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Invoice",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"invoiceNumber\": \"INV-2024-001\",\n  \"poNumber\": \"PO-445\",\n  \"vendorName\": \"Acme Supplies Ltd.\",\n  \"totalAmount\": 2500,\n  \"currency\": \"USD\",\n  \"invoiceDate\": \"2024-05-10\",\n  \"lineItems\": [\n    {\n      \"description\": \"Monitor 27 inch\",\n      \"qty\": 5,\n      \"unitPrice\": 400,\n      \"total\": 2000\n    },\n    {\n      \"description\": \"HDMI Cables\",\n      \"qty\": 10,\n      \"unitPrice\": 50,\n      \"total\": 500\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/invoices",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices"
+							]
+						}
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "api_url",
+			"value": "http://localhost:3000/api/v1",
+			"type": "string"
+		}
+	]
+}
