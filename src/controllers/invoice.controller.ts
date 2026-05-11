@@ -259,7 +259,6 @@ export const createPaymentIntent = asyncHandler(async (req: Request, res: Respon
   const { amount, currency } = req.body;
 
   // 1. Check if a pending payment already exists for this invoice with the same amount
-  // This prevents duplicates if the user clicks "Pay" twice or n8n retries.
   const existingPayment = await prisma.payment.findFirst({
     where: {
       invoiceId: id,
@@ -270,9 +269,8 @@ export const createPaymentIntent = asyncHandler(async (req: Request, res: Respon
 
   if (existingPayment && existingPayment.stripeId) {
     try {
-      // Retrieve the existing intent from Stripe to get the client_secret
       const intent = await stripe.paymentIntents.retrieve(existingPayment.stripeId);
-      
+
       // If it's still open/valid, reuse it
       if (!['canceled', 'succeeded'].includes(intent.status)) {
         return res.json(new ApiResponse(200, 'Reusing existing payment intent', {
@@ -283,7 +281,7 @@ export const createPaymentIntent = asyncHandler(async (req: Request, res: Respon
       }
     } catch (error) {
       console.error('Error retrieving existing Stripe intent:', error);
-      // If retrieval fails (e.g. intent doesn't exist in Stripe), we'll proceed to create a new one
+
     }
   }
 
