@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../utils/prisma.js';
 import { ApiError, ApiResponse, asyncHandler } from '../utils/helpers.js';
+import Stripe from 'stripe';
 
 // ─── Schemas ──────────────────────────────────────────
 const createInvoiceSchema = z.object({
@@ -171,9 +172,9 @@ export const createInvoice = asyncHandler(async (req: Request, res: Response) =>
     data: {
       ...data,
       invoiceDate: data.invoiceDate ? new Date(data.invoiceDate) : null,
-      dueDate:     data.dueDate     ? new Date(data.dueDate)     : null,
-      lineItems:   data.lineItems ? { create: data.lineItems } : undefined,
-      status:      'received',
+      dueDate: data.dueDate ? new Date(data.dueDate) : null,
+      lineItems: data.lineItems ? { create: data.lineItems } : undefined,
+      status: 'received',
     },
     include: {
       vendor: true,
@@ -241,20 +242,20 @@ export const updateInvoice = asyncHandler(async (req: Request, res: Response) =>
     data: {
       ...data,
       invoiceDate: data.invoiceDate ? new Date(data.invoiceDate) : undefined,
-      dueDate:     data.dueDate     ? new Date(data.dueDate)     : undefined,
+      dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
     } as any
   });
 
   return res.json(new ApiResponse(200, 'Invoice updated', invoice));
+});
 
-import Stripe from 'stripe';
-const stripe = new Stripe(process.env.STRIPE_SECRATE || '');
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 
 // ─── Automation Helpers (n8n use karta hai) ───────────
 
 // 1. Create Payment Intent
 export const createPaymentIntent = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const { amount, currency } = req.body;
 
   // 1. Create Stripe Payment Intent
@@ -284,7 +285,7 @@ export const createPaymentIntent = asyncHandler(async (req: Request, res: Respon
 
 // 2. Mark Payment Pending
 export const markPaymentPending = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   await prisma.invoice.update({
     where: { id },
     data: { status: 'payment_processing' }
@@ -294,14 +295,14 @@ export const markPaymentPending = asyncHandler(async (req: Request, res: Respons
 
 // 3. Mark Failed
 export const markFailed = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const { failureReason } = req.body;
-  
+
   await prisma.invoice.update({
     where: { id },
-    data: { status: 'approved', notes: failureReason }
+    data: { status: 'approved', rejectionReason: failureReason }
   });
-  
+
   return res.json(new ApiResponse(200, 'Invoice reverted to approved', null));
 });
 
@@ -325,8 +326,8 @@ export const stripePaymentSuccess = asyncHandler(async (req: Request, res: Respo
         const newTotalPaid = Number(invoice.amountPaid) + (amountReceived / 100);
         await prisma.invoice.update({
           where: { id: payment.invoiceId },
-          data: { 
-            status: 'paid', 
+          data: {
+            status: 'paid',
             amountPaid: newTotalPaid,
             amountDue: Math.max(0, Number(invoice.totalAmount) - newTotalPaid)
           }
@@ -336,7 +337,6 @@ export const stripePaymentSuccess = asyncHandler(async (req: Request, res: Respo
   }
 
   return res.json(new ApiResponse(200, 'Payment success recorded', null));
-});
 });
 
 // ─── Delete Invoice ───────────────────────────────────
