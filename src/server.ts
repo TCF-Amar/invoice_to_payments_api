@@ -6,33 +6,12 @@ import dotenv from 'dotenv';
 
 import router from './routes/index.js';
 import { errorMiddleware } from './middleware/error.middleware.js';
+import { serializeBigInt } from './utils/helpers.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// ─── Custom JSON Replacer for BigInt and Decimal ─────
-const jsonReplacer = (key: string, value: any) => {
-  if (typeof value === 'bigint') {
-    return value.toString();
-  }
-  
-  // Handle Prisma Decimal type
-  if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Decimal') {
-    return parseFloat(value.toString());
-  }
-  
-  return value;
-};
-
-// Override JSON.stringify to handle BigInt
-const originalJson = (Response.prototype as any).json;
-(Response.prototype as any).json = function(body: any) {
-  const jsonString = JSON.stringify(body, jsonReplacer);
-  this.set('Content-Type', 'application/json');
-  return this.send(jsonString);
-};
 
 // ─── Middlewares ──────────────────────────────────────
 app.use(helmet());
@@ -40,6 +19,19 @@ app.use(cors({ origin: '*' }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// ─── Custom Response Serializer Middleware ────────────
+app.use((req, res, next) => {
+  const originalJson = res.json;
+  
+  res.json = function(body: any) {
+    // Serialize BigInt and Decimal before sending
+    const serialized = serializeBigInt(body);
+    return originalJson.call(this, serialized);
+  };
+  
+  next();
+});
 
 // ─── Health Check ─────────────────────────────────────
 app.get('/health', (req, res) => {

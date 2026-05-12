@@ -12,23 +12,28 @@ export class ApiError extends Error {
   }
 }
 
-// ─── BigInt Serializer ────────────────────────────────
+// ─── BigInt & Decimal Serializer ──────────────────────
 export const serializeBigInt = (obj: any): any => {
   if (obj === null || obj === undefined) return obj;
-  
+
   if (typeof obj === 'bigint') {
     return obj.toString();
   }
 
+  // Handle Date objects
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+
   // Handle Prisma Decimal type
-  if (obj.constructor && obj.constructor.name === 'Decimal') {
+  if (obj && typeof obj === 'object' && obj.constructor && obj.constructor.name === 'Decimal') {
     return parseFloat(obj.toString());
   }
-  
+
   if (Array.isArray(obj)) {
     return obj.map(serializeBigInt);
   }
-  
+
   if (typeof obj === 'object') {
     const serialized: any = {};
     for (const key in obj) {
@@ -38,7 +43,7 @@ export const serializeBigInt = (obj: any): any => {
     }
     return serialized;
   }
-  
+
   return obj;
 };
 
