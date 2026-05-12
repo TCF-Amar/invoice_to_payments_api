@@ -1,0 +1,486 @@
+{
+  "name": "Company to Vendor Payout Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "1",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [50, 300]
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyDay",
+              "hour": 10,
+              "minute": 0
+            }
+          ]
+        }
+      },
+      "id": "2",
+      "name": "Daily Cron - 10 AM",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/v1/invoices/approved-unpaid",
+        "method": "GET",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "3",
+      "name": "Get Approved Unpaid Invoices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems"
+      },
+      "id": "4",
+      "name": "Check if Invoices Exist",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "conditions": {
+        "conditions": [
+          {
+            "value1": "={{ $json.data.length }}",
+            "operator": "gt",
+            "value2": 0
+          }
+        ]
+      }
+    },
+    {
+      "parameters": {
+        "loopOver": "data"
+      },
+      "id": "5",
+      "name": "Loop Through Invoices",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/v1/invoices/{{ $json.id }}",
+        "method": "GET",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "6",
+      "name": "Get Invoice Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/v1/vendors/{{ $json.vendorId }}",
+        "method": "GET",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "7",
+      "name": "Get Vendor Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems"
+      },
+      "id": "8",
+      "name": "Check Vendor Bank Details",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "conditions": {
+        "conditions": [
+          {
+            "value1": "={{ $json.accountNumber }}",
+            "operator": "isNotEmpty"
+          },
+          {
+            "value1": "={{ $json.routingNumber }}",
+            "operator": "isNotEmpty"
+          }
+        ],
+        "combinator": "and"
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/v1/payouts",
+        "method": "POST",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": "{\n  \"invoiceId\": \"{{ $json.id }}\",\n  \"amount\": {{ $json.totalAmount }},\n  \"currency\": \"INR\",\n  \"mode\": \"IMPS\",\n  \"purpose\": \"vendor bill\",\n  \"narration\": \"Payment for Invoice {{ $json.invoiceNumber }}\",\n  \"notes\": {\n    \"vendor_name\": \"{{ $json.vendor.name }}\",\n    \"po_number\": \"{{ $json.poNumber }}\",\n    \"invoice_date\": \"{{ $json.invoiceDate }}\"\n  }\n}"
+      },
+      "id": "9",
+      "name": "Create Payout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems"
+      },
+      "id": "10",
+      "name": "Check Payout Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1850, 200],
+        "conditions": {
+        "conditions": [
+          {
+            "value1": "={{ $json.data.razorpayPayout.id }}",
+            "operator": "isNotEmpty"
+          }
+        ]
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/v1/invoices/{{ $json.data.payment.invoiceId }}/status",
+        "method": "PATCH",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": "{\n  \"status\": \"payment_processing\"\n}"
+      },
+      "id": "11",
+      "name": "Update Invoice Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2050, 100]
+    },
+    {
+      "parameters": {
+        "sendTo": "{{ $env.NOTIFICATION_EMAIL }}",
+        "subject": "✅ Payout Created - Invoice {{ $json.data.payment.invoiceId }}",
+        "textOnly": false,
+        "html": "<h2>Payout Successfully Created</h2>\n<p><strong>Invoice ID:</strong> {{ $json.data.payment.invoiceId }}</p>\n<p><strong>Amount:</strong> ₹{{ $json.data.razorpayPayout.amount / 100 }}</p>\n<p><strong>Mode:</strong> {{ $json.data.razorpayPayout.mode }}</p>\n<p><strong>Razorpay Payout ID:</strong> {{ $json.data.razorpayPayout.id }}</p>\n<p><strong>Status:</strong> {{ $json.data.razorpayPayout.status }}</p>\n<p><strong>Created At:</strong> {{ $json.data.payment.createdAt }}</p>"
+      },
+      "id": "12",
+      "name": "Send Success Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [2250, 100]
+    },
+    {
+      "parameters": {
+        "sendTo": "{{ $env.NOTIFICATION_EMAIL }}",
+        "subject": "❌ Payout Failed - Invoice {{ $json.id }}",
+        "textOnly": false,
+        "html": "<h2>Payout Creation Failed</h2>\n<p><strong>Invoice ID:</strong> {{ $json.id }}</p>\n<p><strong>Invoice Number:</strong> {{ $json.invoiceNumber }}</p>\n<p><strong>Amount:</strong> ₹{{ $json.totalAmount }}</p>\n<p><strong>Vendor:</strong> {{ $json.vendor.name }}</p>\n<p><strong>Error:</strong> Failed to create payout</p>\n<p><strong>Time:</strong> {{ now() }}</p>"
+      },
+      "id": "13",
+      "name": "Send Failure Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "{{ $env.NOTIFICATION_EMAIL }}",
+        "subject": "⚠️ Missing Bank Details - Invoice {{ $json.id }}",
+        "textOnly": false,
+        "html": "<h2>Vendor Bank Details Missing</h2>\n<p><strong>Invoice ID:</strong> {{ $json.id }}</p>\n<p><strong>Invoice Number:</strong> {{ $json.invoiceNumber }}</p>\n<p><strong>Vendor:</strong> {{ $json.vendor.name }}</p>\n<p><strong>Vendor ID:</strong> {{ $json.vendorId }}</p>\n<p><strong>Action Required:</strong> Please setup vendor bank account details before payout can be created</p>\n<p><strong>Setup Endpoint:</strong> POST /api/v1/payouts/setup-vendor</p>"
+      },
+      "id": "14",
+      "name": "Send Missing Details Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "sendTo": "{{ $env.NOTIFICATION_EMAIL }}",
+        "subject": "ℹ️ No Approved Invoices - Daily Payout Run",
+        "textOnly": false,
+        "html": "<h2>Daily Payout Run - No Invoices</h2>\n<p><strong>Time:</strong> {{ now() }}</p>\n<p><strong>Status:</strong> No approved unpaid invoices found</p>\n<p><strong>Next Run:</strong> Tomorrow at 10:00 AM</p>"
+      },
+      "id": "15",
+      "name": "Send No Invoices Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [850, 500]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems"
+      },
+      "id": "16",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [2450, 200]
+    },
+    {
+      "parameters": {},
+      "id": "17",
+      "name": "End",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2650, 200]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Daily Cron - 10 AM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Cron - 10 AM": {
+      "main": [
+        [
+          {
+            "node": "Get Approved Unpaid Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Approved Unpaid Invoices": {
+      "main": [
+        [
+          {
+            "node": "Check if Invoices Exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Invoices Exist": {
+      "main": [
+        [
+          {
+            "node": "Loop Through Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send No Invoices Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Through Invoices": {
+      "main": [
+        [
+          {
+            "node": "Get Invoice Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Invoice Details": {
+      "main": [
+        [
+          {
+            "node": "Get Vendor Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Vendor Details": {
+      "main": [
+        [
+          {
+            "node": "Check Vendor Bank Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Vendor Bank Details": {
+      "main": [
+        [
+          {
+            "node": "Create Payout",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Missing Details Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Payout": {
+      "main": [
+        [
+          {
+            "node": "Check Payout Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Payout Success": {
+      "main": [
+        [
+          {
+            "node": "Update Invoice Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Failure Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Invoice Status": {
+      "main": [
+        [
+          {
+            "node": "Send Success Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Success Email": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Failure Email": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Missing Details Email": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send No Invoices Email": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "default"
+  },
+  "pinData": {}
+}

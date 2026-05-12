@@ -23,7 +23,7 @@ const createInvoiceSchema = z.object({
   invoiceDate: z.string().optional(),
   dueDate: z.string().optional(),
   paymentTerms: z.string().optional(),
-  currency: z.string().optional(),
+  currency: z.string().optional(),  
   subtotal: z.number().optional(),
   discount: z.number().optional(),
   taxRate: z.number().optional(),
