@@ -1,16 +1,58 @@
-import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Initialize Razorpay instance
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || '',
-  key_secret: process.env.RAZORPAY_KEY_SECRET || '',
-});
+// ─── Base HTTP Helper ──────────────────────────────────
 
-export default razorpay;
+const BASE_URL = 'https://api.razorpay.com/v1';
+
+function getAuthHeader(): string {
+  const key = process.env.RAZORPAY_KEY_ID || '';
+  const secret = process.env.RAZORPAY_KEY_SECRET || '';
+  return 'Basic ' + Buffer.from(`${key}:${secret}`).toString('base64');
+}
+
+async function razorpayRequest<T = any>(
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: Record<string, any>,
+  queryParams?: Record<string, string | number | undefined>
+): Promise<{ success: true; data: T } | { success: false; error: string }> {
+  try {
+    let url = `${BASE_URL}${path}`;
+
+    if (queryParams) {
+      const q = new URLSearchParams();
+      for (const [k, v] of Object.entries(queryParams)) {
+        if (v !== undefined) q.append(k, String(v));
+      }
+      const qs = q.toString();
+      if (qs) url += `?${qs}`;
+    }
+
+    const res = await fetch(url, {
+      method,
+      headers: {
+        Authorization: getAuthHeader(),
+        'Content-Type': 'application/json',
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+
+    const data: any = await res.json();
+
+    if (!res.ok) {
+      const message = data?.error?.description || data?.error?.reason || JSON.stringify(data?.error) || 'Razorpay API error';
+      return { success: false, error: message };
+    }
+
+    return { success: true, data: data as T };
+  } catch (err: any) {
+    console.error(`[Razorpay] ${method} ${path} failed:`, err.message);
+    return { success: false, error: err.message || 'Network error' };
+  }
+}
 
 // ─── Types ────────────────────────────────────────────
 
@@ -32,7 +74,7 @@ export interface RazorpayFundAccountData {
     account_number: string;
   };
   vpa?: {
-    address: string; // UPI VPA, e.g. vendor@upi
+    address: string;
   };
 }
 
@@ -49,238 +91,111 @@ export interface RazorpayPayoutData {
   notes?: Record<string, any>;
 }
 
-// ─── Contact Functions ─────────────────────────────────
+// ─── Contact APIs ─────────────────────────────────────
 
-/**
- * Create a contact in Razorpay for a vendor
- */
-export async function createRazorpayContact(data: RazorpayContactData) {
-  try {
-    // @ts-ignore
-    const contact = await razorpay.contacts.create(data);
-    return { success: true as const, data: contact };
-  } catch (error: any) {
-    console.error('Razorpay Contact Creation Error:', error);
-    return { success: false as const, error: error.error?.description || error.message };
-  }
+/** POST /v1/contacts */
+export function createRazorpayContact(data: RazorpayContactData) {
+  return razorpayRequest('POST', '/contacts', data);
 }
 
-/**
- * Fetch all contacts
- */
-export async function fetchRazorpayContacts(params?: { count?: number; skip?: number }) {
-  try {
-    // @ts-ignore
-    const contacts = await razorpay.contacts.all(params || {});
-    return { success: true as const, data: contacts };
-  } catch (error: any) {
-    console.error('Razorpay Contacts Fetch Error:', error);
-    return { success: false as const, error: error.error?.description || error.message };
-  }
+/** GET /v1/contacts */
+export function fetchRazorpayContacts(params?: { count?: number; skip?: number }) {
+  return razorpayRequest('GET', '/contacts', undefined, params as any);
 }
 
-/**
- * Fetch a single contact by ID
- */
-export async function fetchRazorpayContact(contactId: string) {
-  try {
-    // @ts-ignore
-    const contact = await razorpay.contacts.fetch(contactId);
-    return { success: true as const, data: contact };
-  } catch (error: any) {
-    console.error('Razorpay Contact Fetch Error:', error);
-    return { success: false as const, error: error.error?.description || error.message };
-  }
+/** GET /v1/contacts/:id */
+export function fetchRazorpayContact(contactId: string) {
+  return razorpayRequest('GET', `/contacts/${contactId}`);
 }
 
-// ─── Fund Account Functions ────────────────────────────
-
-/**
- * Create a fund account (bank account or VPA) for a contact
- */
-export async function createRazorpayFundAccount(data: RazorpayFundAccountData): Promise<{ success: true; data: any } | { success: false; error: any; data?: undefined }> {
-  try {
-    // @ts-ignore
-    const fundAccount = await razorpay.fundAccount.create(data);
-    return { success: true, data: fundAccount };
-  } catch (error: any) {
-    console.error('Razorpay Fund Account Creation Error:', error);
-    return { success: false, error: error.error?.description || error.message };
-  }
+/** PATCH /v1/contacts/:id — activate or deactivate */
+export function toggleRazorpayContact(contactId: string, active: boolean) {
+  return razorpayRequest('PATCH', `/contacts/${contactId}`, { active });
 }
 
-/**
- * Fetch all fund accounts (optionally filtered by contact_id)
- */
-export async function fetchRazorpayFundAccounts(params?: { contact_id?: string; count?: number; skip?: number }) {
-  try {
-    // @ts-ignore
-    const accounts = await razorpay.fundAccount.all(params || {});
-    return { success: true as const, data: accounts };
-  } catch (error: any) {
-    console.error('Razorpay Fund Accounts Fetch Error:', error);
-    return { success: false as const, error: error.error?.description || error.message };
-  }
+// ─── Fund Account APIs ────────────────────────────────
+
+/** POST /v1/fund_accounts */
+export function createRazorpayFundAccount(data: RazorpayFundAccountData) {
+  return razorpayRequest('POST', '/fund_accounts', data);
 }
 
-/**
- * Fetch a single fund account by ID
- */
-export async function fetchRazorpayFundAccount(fundAccountId: string) {
-  try {
-    // @ts-ignore
-    const account = await razorpay.fundAccount.fetch(fundAccountId);
-    return { success: true as const, data: account };
-  } catch (error: any) {
-    console.error('Razorpay Fund Account Fetch Error:', error);
-    return { success: false as const, error: error.error?.description || error.message };
-  }
+/** GET /v1/fund_accounts */
+export function fetchRazorpayFundAccounts(params?: { contact_id?: string; count?: number; skip?: number }) {
+  return razorpayRequest('GET', '/fund_accounts', undefined, params as any);
 }
 
-/**
- * Activate or deactivate a fund account
- */
-export async function toggleRazorpayFundAccount(fundAccountId: string, active: boolean) {
-  try {
-    // @ts-ignore
-    const account = await razorpay.fundAccount.update(fundAccountId, { active });
-    return { success: true as const, data: account };
-  } catch (error: any) {
-    console.error('Razorpay Fund Account Toggle Error:', error);
-    return { success: false as const, error: error.error?.description || error.message };
-  }
+/** GET /v1/fund_accounts/:id */
+export function fetchRazorpayFundAccount(fundAccountId: string) {
+  return razorpayRequest('GET', `/fund_accounts/${fundAccountId}`);
 }
 
-// ─── Payout Functions ─────────────────────────────────
-
-/**
- * Create a payout to a vendor fund account
- */
-export async function createRazorpayPayout(data: RazorpayPayoutData) {
-  try {
-    // @ts-ignore
-    const payout = await razorpay.payouts.create(data);
-    return { success: true as const, data: payout };
-  } catch (error: any) {
-    console.error('Razorpay Payout Creation Error:', error);
-    return { success: false as const, error: error.error?.description || error.message };
-  }
+/** PATCH /v1/fund_accounts/:id — activate or deactivate */
+export function toggleRazorpayFundAccount(fundAccountId: string, active: boolean) {
+  return razorpayRequest('PATCH', `/fund_accounts/${fundAccountId}`, { active });
 }
 
-/**
- * Fetch all payouts for an account number
- */
-export async function fetchAllRazorpayPayouts(params: { account_number: string; count?: number; skip?: number }) {
-  try {
-    // @ts-ignore
-    const payouts = await razorpay.payouts.all(params);
-    return { success: true as const, data: payouts };
-  } catch (error: any) {
-    console.error('Razorpay Payouts Fetch Error:', error);
-    return { success: false as const, error: error.error?.description || error.message };
-  }
+// ─── Payout APIs ──────────────────────────────────────
+
+/** POST /v1/payouts */
+export function createRazorpayPayout(data: RazorpayPayoutData) {
+  return razorpayRequest('POST', '/payouts', data);
 }
 
-/**
- * Fetch a single payout by ID
- */
-export async function getRazorpayPayout(payoutId: string) {
-  try {
-    // @ts-ignore
-    const payout = await razorpay.payouts.fetch(payoutId);
-    return { success: true as const, data: payout };
-  } catch (error: any) {
-    console.error('Razorpay Payout Fetch Error:', error);
-    return { success: false as const, error: error.error?.description || error.message };
-  }
+/** GET /v1/payouts?account_number=... */
+export function fetchAllRazorpayPayouts(params: { account_number: string; count?: number; skip?: number }) {
+  return razorpayRequest('GET', '/payouts', undefined, params as any);
 }
 
-/**
- * Cancel a queued payout
- */
-export async function cancelRazorpayPayout(payoutId: string) {
-  try {
-    // @ts-ignore
-    const payout = await razorpay.payouts.cancel(payoutId);
-    return { success: true as const, data: payout };
-  } catch (error: any) {
-    console.error('Razorpay Payout Cancel Error:', error);
-    return { success: false as const, error: error.error?.description || error.message };
-  }
+/** GET /v1/payouts/:id */
+export function getRazorpayPayout(payoutId: string) {
+  return razorpayRequest('GET', `/payouts/${payoutId}`);
 }
 
-// ─── Banking Balance Functions ────────────────────────
+/** PATCH /v1/payouts/:id/cancel */
+export function cancelRazorpayPayout(payoutId: string) {
+  return razorpayRequest('POST', `/payouts/${payoutId}/cancel`);
+}
 
-/**
- * Fetch balances of all banking accounts
- */
-export async function fetchBankingBalances(params?: {
+// ─── Banking Balance API ──────────────────────────────
+
+/** GET /v1/banking_balances */
+export function fetchBankingBalances(params?: {
   account_type?: 'current_account' | 'razorpayx_lite';
   bank_code?: string;
   count?: number;
   skip?: number;
 }) {
-  try {
-    const query = new URLSearchParams();
-    if (params?.account_type) query.append('account_type', params.account_type);
-    if (params?.bank_code) query.append('bank_code', params.bank_code);
-    if (params?.count) query.append('count', String(params.count));
-    if (params?.skip) query.append('skip', String(params.skip));
-
-    const url = `https://api.razorpay.com/v1/banking_balances?${query.toString()}`;
-    const auth = Buffer.from(`${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`).toString('base64');
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    const data = await response.json() as any;
-
-    if (!response.ok) {
-      return { success: false as const, error: data.error?.description || 'Failed to fetch balances' };
-    }
-
-    return { success: true as const, data };
-  } catch (error: any) {
-    console.error('Razorpay Banking Balance Error:', error);
-    return { success: false as const, error: error.message };
-  }
+  return razorpayRequest('GET', '/banking_balances', undefined, params as any);
 }
 
 // ─── Webhook Verification ─────────────────────────────
 
-/**
- * Verify Razorpay webhook signature
- */
+/** Verify Razorpay webhook HMAC-SHA256 signature */
 export function verifyRazorpayWebhook(
   webhookBody: string,
   webhookSignature: string,
   webhookSecret: string
 ): boolean {
   try {
-    const expectedSignature = crypto
+    const expected = crypto
       .createHmac('sha256', webhookSecret)
       .update(webhookBody)
       .digest('hex');
-    return expectedSignature === webhookSignature;
-  } catch (error) {
-    console.error('Webhook verification error:', error);
+    return expected === webhookSignature;
+  } catch {
     return false;
   }
 }
 
-// ─── Amount Conversion ────────────────────────────────
+// ─── Amount Helpers ───────────────────────────────────
 
-/** Convert rupees to paise */
+/** Convert INR rupees → paise */
 export function convertToPaise(amount: number): number {
   return Math.round(amount * 100);
 }
 
-/** Convert paise to rupees */
+/** Convert paise → INR rupees */
 export function convertToRupees(paise: number): number {
   return paise / 100;
 }
