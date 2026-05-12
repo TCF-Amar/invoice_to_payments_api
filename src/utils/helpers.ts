@@ -19,6 +19,11 @@ export const serializeBigInt = (obj: any): any => {
   if (typeof obj === 'bigint') {
     return obj.toString();
   }
+
+  // Handle Prisma Decimal type
+  if (obj.constructor && obj.constructor.name === 'Decimal') {
+    return parseFloat(obj.toString());
+  }
   
   if (Array.isArray(obj)) {
     return obj.map(serializeBigInt);

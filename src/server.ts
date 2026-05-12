@@ -12,11 +12,17 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── Custom JSON Replacer for BigInt ──────────────────
+// ─── Custom JSON Replacer for BigInt and Decimal ─────
 const jsonReplacer = (key: string, value: any) => {
   if (typeof value === 'bigint') {
     return value.toString();
   }
+  
+  // Handle Prisma Decimal type
+  if (value && typeof value === 'object' && value.constructor && value.constructor.name === 'Decimal') {
+    return parseFloat(value.toString());
+  }
+  
   return value;
 };
 
