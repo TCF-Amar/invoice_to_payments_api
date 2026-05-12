@@ -3,6 +3,7 @@ import * as vendorCtrl from '../controllers/vendor.controller.js';
 import * as poCtrl from '../controllers/po.controller.js';
 import * as invoiceCtrl from '../controllers/invoice.controller.js';
 import * as paymentCtrl from '../controllers/payment.controller.js';
+import * as payoutCtrl from '../controllers/payout.controller.js';
 
 const router = Router();
 
@@ -82,5 +83,22 @@ router.patch ('/invoices/stripe/payment-success',       invoiceCtrl.stripePaymen
 router.get   ('/payments/invoice/:invoiceId',           paymentCtrl.getPaymentsByInvoice);
 router.post  ('/payments',                              paymentCtrl.createPayment);
 router.patch ('/payments/:id/status',                   paymentCtrl.updatePaymentStatus);
+
+// ════════════════════════════════════════════════════
+// RAZORPAY PAYOUT ROUTES
+// ════════════════════════════════════════════════════
+// POST   /api/v1/payouts/setup-vendor         → setup vendor for Razorpay payouts
+// POST   /api/v1/payouts                      → create payout for invoice
+// POST   /api/v1/payouts/bulk                 → create bulk payouts
+// GET    /api/v1/payouts/:payoutId            → get payout status
+// POST   /api/v1/payouts/:payoutId/cancel     → cancel queued payout
+// POST   /api/v1/payouts/webhook              → Razorpay webhook handler
+
+router.post  ('/payouts/setup-vendor',                  payoutCtrl.setupVendorPayout);
+router.post  ('/payouts',                               payoutCtrl.createPayout);
+router.post  ('/payouts/bulk',                          payoutCtrl.createBulkPayouts);
+router.get   ('/payouts/:payoutId',                     payoutCtrl.getPayoutStatus);
+router.post  ('/payouts/:payoutId/cancel',              payoutCtrl.cancelPayout);
+router.post  ('/payouts/webhook',                       payoutCtrl.handleRazorpayWebhook);
 
 export default router;

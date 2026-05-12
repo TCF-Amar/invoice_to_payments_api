@@ -7,8 +7,8 @@ import { ApiError, ApiResponse, asyncHandler } from '../utils/helpers.js';
 const createPaymentSchema = z.object({
   invoiceId:  z.string().uuid(),
   amountPaid: z.number().positive(),
-  currency:   z.string().default('USD'),
-  stripeId:   z.string().optional(),
+  currency:   z.string().default('INR'),
+  paymentId:  z.string().optional(),
   status: z.enum(['pending', 'processing', 'paid', 'completed', 'failed']).default('pending'),
   
 });
@@ -23,7 +23,7 @@ export const getPaymentsByInvoice = asyncHandler(async (req: Request, res: Respo
   return res.json(new ApiResponse(200, 'Payments fetched', payments));
 });
 
-// ─── Create Payment (Stripe webhook triggers this) ────
+// ─── Create Payment (Razorpay webhook triggers this) ────
 export const createPayment = asyncHandler(async (req: Request, res: Response) => {
   const data = createPaymentSchema.parse(req.body);
 
@@ -35,11 +35,11 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
   if (!invoice) throw new ApiError(404, 'Invoice not found');
   if (invoice.status === 'paid') throw new ApiError(400, 'Invoice already paid');
 
-  // Check if payment already exists (e.g. created by createPaymentIntent)
+  // Check if payment already exists
   let payment;
-  if (data.stripeId) {
+  if (data.paymentId) {
     payment = await prisma.payment.findFirst({
-      where: { stripeId: data.stripeId }
+      where: { stripeId: data.paymentId }
     });
   }
 
@@ -61,7 +61,11 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
   } else {
     payment = await prisma.payment.create({
       data: {
-        ...data,
+        invoiceId: data.invoiceId,
+        amountPaid: data.amountPaid,
+        currency: data.currency,
+        stripeId: data.paymentId,
+        status: data.status,
         poId: invoice.matchedPoId ?? undefined,
         paidAt: ['paid', 'completed'].includes(data.status) ? new Date() : null,
       }
@@ -108,10 +112,10 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
       entityType: 'payment',
       entityId: payment.id,
       eventType: isNew ? 'payment_created' : 'payment_updated',
-      actor: 'stripe',
+      actor: 'razorpay',
       invoiceId: data.invoiceId,
       paymentId: payment.id,
-      metadata: { amountPaid: data.amountPaid, stripeId: data.stripeId, status: data.status } as any
+      metadata: { amountPaid: data.amountPaid, paymentId: data.paymentId, status: data.status } as any
     }
   });
 
@@ -119,11 +123,11 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
     .json(new ApiResponse(200, 'Payment recorded', payment));
 });
 
-// ─── Update Payment Status (Stripe webhook) ───────────
+// ─── Update Payment Status (Razorpay webhook) ───────────
 export const updatePaymentStatus = asyncHandler(async (req: Request, res: Response) => {
-  const { status, stripeId, failureReason } = z.object({
+  const { status, paymentId, failureReason } = z.object({
     status:        z.enum(['pending','processing','paid','completed','failed','refunded']),
-    stripeId:      z.string().optional(),
+    paymentId:     z.string().optional(),
     failureReason: z.string().optional(),
   }).parse(req.body);
 
@@ -133,9 +137,9 @@ export const updatePaymentStatus = asyncHandler(async (req: Request, res: Respon
       where: { id: req.params.id as string },
       include: { invoice: true }
     });
-  } else if (stripeId) {
+  } else if (paymentId) {
     payment = await prisma.payment.findFirst({
-      where: { stripeId: stripeId as string },
+      where: { stripeId: paymentId as string },
       include: { invoice: true }
     });
   }
@@ -147,7 +151,7 @@ export const updatePaymentStatus = asyncHandler(async (req: Request, res: Respon
     where: { id: payment.id },
     data: {
       status,
-      stripeId: stripeId ?? undefined,
+      stripeId: paymentId ?? undefined,
       failureReason: failureReason ?? null,
       paidAt: ['paid', 'completed'].includes(status) ? new Date() : undefined,
     }
