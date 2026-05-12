@@ -42,6 +42,8 @@ app.use((req, res, next) => {
   next();
 });
 
+import { authMiddleware } from './middleware/auth.middleware.js';
+
 // ─── Health Check ─────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({
@@ -52,8 +54,12 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ─── API Authentication Middleware ────────────────────
+app.use('/api', authMiddleware);
+
 // ─── API Routes ───────────────────────────────────────
 app.use('/api/v1', router);
+
 
 // ─── 404 Handler ──────────────────────────────────────
 app.use((req, res) => {
