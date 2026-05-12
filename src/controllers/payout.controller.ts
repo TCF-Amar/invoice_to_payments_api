@@ -53,16 +53,22 @@ const bulkPayoutSchema = z.object({
 
 // ─── Internal: resolve or create Razorpay Contact + FundAccount ───
 async function ensureRazorpaySetup(vendorId: string) {
-  const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
-  if (!vendor) throw new ApiError(404, 'Vendor not found');
-  if (!vendor.accountNumber || !vendor.routingNumber) {
+  const _vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+  if (!_vendor) throw new ApiError(404, 'Vendor not found');
+  if (!_vendor.accountNumber || !_vendor.routingNumber) {
     throw new ApiError(400, 'Vendor bank details not configured. Use /payouts/setup-vendor first.');
   }
+
+  // Cast to any so TS accepts new Prisma fields even before LSP reloads
+  const vendor = _vendor as typeof _vendor & {
+    razorpayContactId?: string | null;
+    razorpayFundAccountId?: string | null;
+  };
 
   // Reuse stored IDs to avoid duplicate contacts/fund accounts
   if (vendor.razorpayContactId && vendor.razorpayFundAccountId) {
     return {
-      vendor,
+      vendor: _vendor,
       contactId: vendor.razorpayContactId,
       fundAccountId: vendor.razorpayFundAccountId,
     };
@@ -70,37 +76,38 @@ async function ensureRazorpaySetup(vendorId: string) {
 
   // Create contact
   const contactResult = await createRazorpayContact({
-    name: vendor.name,
-    email: vendor.email || undefined,
-    contact: vendor.phone || undefined,
+    name: _vendor.name,
+    email: _vendor.email || undefined,
+    contact: _vendor.phone || undefined,
     type: 'vendor',
-    reference_id: vendor.id,
-    notes: { vendor_id: vendor.id },
+    reference_id: _vendor.id,
+    notes: { vendor_id: _vendor.id },
   });
   if (!contactResult.success) throw new ApiError(500, `Razorpay contact error: ${contactResult.error}`);
-  const contactId = contactResult.data.id;
+  const contactId = contactResult.data.id as string;
 
   // Create fund account
   const fundResult = await createRazorpayFundAccount({
     contact_id: contactId,
     account_type: 'bank_account',
     bank_account: {
-      name: vendor.accountName || vendor.name,
-      ifsc: vendor.routingNumber!,
-      account_number: vendor.accountNumber!,
+      name: _vendor.accountName || _vendor.name,
+      ifsc: _vendor.routingNumber!,
+      account_number: _vendor.accountNumber!,
     },
   });
   if (!fundResult.success) throw new ApiError(500, `Razorpay fund account error: ${fundResult.error}`);
-  const fundAccountId = fundResult.data.id;
+  const fundAccountId = fundResult.data.id as string;
 
   // Persist IDs
   await prisma.vendor.update({
-    where: { id: vendor.id },
-    data: { razorpayContactId: contactId, razorpayFundAccountId: fundAccountId },
+    where: { id: _vendor.id },
+    data: { razorpayContactId: contactId, razorpayFundAccountId: fundAccountId } as any,
   });
 
-  return { vendor, contactId, fundAccountId };
+  return { vendor: _vendor, contactId, fundAccountId };
 }
+
 
 // ════════════════════════════════════════════════════
 // BANKING BALANCE
@@ -172,8 +179,7 @@ export const setupVendorPayout = asyncHandler(async (req: Request, res: Response
       accountName: data.accountName,
       accountNumber: data.accountNumber,
       routingNumber: data.ifscCode,
-      razorpayContactId,
-      razorpayFundAccountId,
+      ...({ razorpayContactId, razorpayFundAccountId } as any),
     },
   });
 
@@ -268,7 +274,8 @@ export const getContacts = asyncHandler(async (req: Request, res: Response) => {
  * Fetch a single Razorpay contact
  */
 export const getContact = asyncHandler(async (req: Request, res: Response) => {
-  const result = await fetchRazorpayContact(req.params.contactId);
+  const contactId = req.params.contactId as string;
+  const result = await fetchRazorpayContact(contactId);
   if (!result.success) throw new ApiError(500, `Failed to fetch contact: ${result.error}`);
   return res.json(new ApiResponse(200, 'Contact fetched', result.data));
 });
@@ -297,7 +304,8 @@ export const getFundAccounts = asyncHandler(async (req: Request, res: Response) 
  * Fetch a single fund account
  */
 export const getFundAccount = asyncHandler(async (req: Request, res: Response) => {
-  const result = await fetchRazorpayFundAccount(req.params.fundAccountId);
+  const fundAccountId = req.params.fundAccountId as string;
+  const result = await fetchRazorpayFundAccount(fundAccountId);
   if (!result.success) throw new ApiError(500, `Failed to fetch fund account: ${result.error}`);
   return res.json(new ApiResponse(200, 'Fund account fetched', result.data));
 });
@@ -307,8 +315,9 @@ export const getFundAccount = asyncHandler(async (req: Request, res: Response) =
  * Activate or deactivate a fund account
  */
 export const toggleFundAccount = asyncHandler(async (req: Request, res: Response) => {
+  const fundAccountId = req.params.fundAccountId as string;
   const { active } = z.object({ active: z.boolean() }).parse(req.body);
-  const result = await toggleRazorpayFundAccount(req.params.fundAccountId, active);
+  const result = await toggleRazorpayFundAccount(fundAccountId, active);
   if (!result.success) throw new ApiError(500, `Failed to toggle fund account: ${result.error}`);
   return res.json(new ApiResponse(200, `Fund account ${active ? 'activated' : 'deactivated'}`, result.data));
 });
@@ -442,7 +451,7 @@ export const getAllPayouts = asyncHandler(async (req: Request, res: Response) =>
  * Fetch a single payout status from Razorpay
  */
 export const getPayoutStatus = asyncHandler(async (req: Request, res: Response) => {
-  const payoutId = req.params.payoutId;
+  const payoutId = req.params.payoutId as string;
   const result = await getRazorpayPayout(payoutId);
   if (!result.success) throw new ApiError(500, `Failed to fetch payout: ${result.error}`);
   const p = result.data;
@@ -468,7 +477,7 @@ export const getPayoutStatus = asyncHandler(async (req: Request, res: Response) 
  * Cancel a queued payout
  */
 export const cancelPayout = asyncHandler(async (req: Request, res: Response) => {
-  const payoutId = req.params.payoutId;
+  const payoutId = req.params.payoutId as string;
   const result = await cancelRazorpayPayout(payoutId);
   if (!result.success) throw new ApiError(500, `Failed to cancel payout: ${result.error}`);
 
