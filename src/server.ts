@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -11,6 +11,22 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ─── Custom JSON Replacer for BigInt ──────────────────
+const jsonReplacer = (key: string, value: any) => {
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+  return value;
+};
+
+// Override JSON.stringify to handle BigInt
+const originalJson = (Response.prototype as any).json;
+(Response.prototype as any).json = function(body: any) {
+  const jsonString = JSON.stringify(body, jsonReplacer);
+  this.set('Content-Type', 'application/json');
+  return this.send(jsonString);
+};
 
 // ─── Middlewares ──────────────────────────────────────
 app.use(helmet());

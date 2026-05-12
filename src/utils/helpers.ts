@@ -12,7 +12,31 @@ export class ApiError extends Error {
   }
 }
 
- 
+// ─── BigInt Serializer ────────────────────────────────
+export const serializeBigInt = (obj: any): any => {
+  if (obj === null || obj === undefined) return obj;
+  
+  if (typeof obj === 'bigint') {
+    return obj.toString();
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(serializeBigInt);
+  }
+  
+  if (typeof obj === 'object') {
+    const serialized: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        serialized[key] = serializeBigInt(obj[key]);
+      }
+    }
+    return serialized;
+  }
+  
+  return obj;
+};
+
 // ─── API Response ─────────────────────────────────────
 export class ApiResponse<T> {
   success: boolean;
@@ -24,7 +48,7 @@ export class ApiResponse<T> {
     this.success = statusCode < 400;
     this.statusCode = statusCode;
     this.message = message;
-    this.data = data;
+    this.data = serializeBigInt(data);
   }
 }
 
