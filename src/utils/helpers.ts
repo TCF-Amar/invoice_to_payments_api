@@ -26,7 +26,13 @@ export const serializeBigInt = (obj: any): any => {
   }
 
   // Handle Prisma Decimal type
-  if (obj && typeof obj === 'object' && obj.constructor && obj.constructor.name === 'Decimal') {
+  // Robust check: constructor name OR characteristic s, e, d properties
+  if (
+    obj && typeof obj === 'object' &&
+    ((obj.constructor && obj.constructor.name === 'Decimal') ||
+      (obj.s !== undefined && obj.e !== undefined && obj.d !== undefined)) &&
+    typeof obj.toString === 'function'
+  ) {
     return parseFloat(obj.toString());
   }
 
@@ -58,7 +64,8 @@ export class ApiResponse<T> {
     this.success = statusCode < 400;
     this.statusCode = statusCode;
     this.message = message;
-    this.data = serializeBigInt(data);
+    // Don't serialize here - let middleware handle it
+    this.data = data;
   }
 }
 

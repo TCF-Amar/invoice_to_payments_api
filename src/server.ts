@@ -20,14 +20,23 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ─── Custom Response Serializer Middleware ────────────
+// ─── Custom JSON Serializer Middleware ────────────────
+// This MUST come before routes to intercept all responses
 app.use((req, res, next) => {
-  const originalJson = res.json;
+  const originalJson = res.json.bind(res);
   
-  res.json = function(body: any) {
-    // Serialize BigInt and Decimal before sending
-    const serialized = serializeBigInt(body);
-    return originalJson.call(this, serialized);
+  res.json = function(data: any) {
+    // Prevent infinite loop if res.json is called recursively
+    if ((res as any)._isSerializing) {
+      return originalJson(data);
+    }
+    
+    (res as any)._isSerializing = true;
+    const serialized = serializeBigInt(data);
+    const result = originalJson(serialized);
+    (res as any)._isSerializing = false;
+    
+    return result;
   };
   
   next();
