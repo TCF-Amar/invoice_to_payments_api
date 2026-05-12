@@ -233,7 +233,7 @@ export const setupVendorVpa = asyncHandler(async (req: Request, res: Response) =
 
   const updatedVendor = await prisma.vendor.update({
     where: { id: data.vendorId },
-    data: { razorpayContactId, razorpayFundAccountId },
+    data: { ...({ razorpayContactId, razorpayFundAccountId } as any) },
   });
 
   await prisma.auditLog.create({
