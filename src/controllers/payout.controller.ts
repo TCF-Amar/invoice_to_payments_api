@@ -4,16 +4,37 @@ import prisma from '../utils/prisma.js';
 import { ApiError, ApiResponse, asyncHandler } from '../utils/helpers.js';
 import {
   createRazorpayContact,
+  fetchRazorpayContacts,
+  fetchRazorpayContact,
   createRazorpayFundAccount,
+  fetchRazorpayFundAccounts,
+  fetchRazorpayFundAccount,
+  toggleRazorpayFundAccount,
   createRazorpayPayout,
+  fetchAllRazorpayPayouts,
   getRazorpayPayout,
   cancelRazorpayPayout,
+  fetchBankingBalances,
+  verifyRazorpayWebhook,
   convertToPaise,
   convertToRupees,
-  verifyRazorpayWebhook,
 } from '../utils/razorpay.js';
 
 // ─── Schemas ──────────────────────────────────────────
+
+const setupVendorPayoutSchema = z.object({
+  vendorId: z.string().uuid(),
+  bankName: z.string().min(1),
+  accountName: z.string().min(1),
+  accountNumber: z.string().min(1),
+  ifscCode: z.string().min(1),
+});
+
+const setupVendorVpaSchema = z.object({
+  vendorId: z.string().uuid(),
+  vpaAddress: z.string().min(1, 'UPI VPA is required (e.g. vendor@upi)'),
+});
+
 const createPayoutSchema = z.object({
   invoiceId: z.string().uuid(),
   amount: z.number().positive(),
@@ -24,23 +45,98 @@ const createPayoutSchema = z.object({
   notes: z.record(z.string(), z.any()).optional(),
 });
 
-const setupVendorPayoutSchema = z.object({
-  vendorId: z.string().uuid(),
-  bankName: z.string().min(1),
-  accountName: z.string().min(1),
-  accountNumber: z.string().min(1),
-  ifscCode: z.string().min(1),
+const bulkPayoutSchema = z.object({
+  invoiceIds: z.array(z.string().uuid()).min(1),
+  mode: z.enum(['IMPS', 'NEFT', 'RTGS', 'UPI']).default('IMPS'),
+  purpose: z.enum(['refund', 'cashback', 'payout', 'salary', 'utility bill', 'vendor bill']).default('vendor bill'),
 });
 
-// ─── Setup Vendor for Razorpay Payouts ────────────────
+// ─── Internal: resolve or create Razorpay Contact + FundAccount ───
+async function ensureRazorpaySetup(vendorId: string) {
+  const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+  if (!vendor) throw new ApiError(404, 'Vendor not found');
+  if (!vendor.accountNumber || !vendor.routingNumber) {
+    throw new ApiError(400, 'Vendor bank details not configured. Use /payouts/setup-vendor first.');
+  }
+
+  // Reuse stored IDs to avoid duplicate contacts/fund accounts
+  if (vendor.razorpayContactId && vendor.razorpayFundAccountId) {
+    return {
+      vendor,
+      contactId: vendor.razorpayContactId,
+      fundAccountId: vendor.razorpayFundAccountId,
+    };
+  }
+
+  // Create contact
+  const contactResult = await createRazorpayContact({
+    name: vendor.name,
+    email: vendor.email || undefined,
+    contact: vendor.phone || undefined,
+    type: 'vendor',
+    reference_id: vendor.id,
+    notes: { vendor_id: vendor.id },
+  });
+  if (!contactResult.success) throw new ApiError(500, `Razorpay contact error: ${contactResult.error}`);
+  const contactId = contactResult.data.id;
+
+  // Create fund account
+  const fundResult = await createRazorpayFundAccount({
+    contact_id: contactId,
+    account_type: 'bank_account',
+    bank_account: {
+      name: vendor.accountName || vendor.name,
+      ifsc: vendor.routingNumber!,
+      account_number: vendor.accountNumber!,
+    },
+  });
+  if (!fundResult.success) throw new ApiError(500, `Razorpay fund account error: ${fundResult.error}`);
+  const fundAccountId = fundResult.data.id;
+
+  // Persist IDs
+  await prisma.vendor.update({
+    where: { id: vendor.id },
+    data: { razorpayContactId: contactId, razorpayFundAccountId: fundAccountId },
+  });
+
+  return { vendor, contactId, fundAccountId };
+}
+
+// ════════════════════════════════════════════════════
+// BANKING BALANCE
+// ════════════════════════════════════════════════════
+
+/**
+ * GET /api/v1/payouts/balance
+ * Fetch balances for all banking accounts
+ */
+export const getBankingBalance = asyncHandler(async (req: Request, res: Response) => {
+  const { account_type, bank_code, count, skip } = req.query as any;
+
+  const result = await fetchBankingBalances({
+    account_type: account_type as any,
+    bank_code,
+    count: count ? Number(count) : undefined,
+    skip: skip ? Number(skip) : undefined,
+  });
+
+  if (!result.success) throw new ApiError(500, `Failed to fetch balance: ${result.error}`);
+
+  return res.json(new ApiResponse(200, 'Banking balances fetched', result.data));
+});
+
+// ════════════════════════════════════════════════════
+// CONTACTS
+// ════════════════════════════════════════════════════
+
+/**
+ * POST /api/v1/payouts/setup-vendor
+ * Create Razorpay contact + bank fund account for a vendor
+ */
 export const setupVendorPayout = asyncHandler(async (req: Request, res: Response) => {
   const data = setupVendorPayoutSchema.parse(req.body);
 
-  // Get vendor
-  const vendor = await prisma.vendor.findUnique({
-    where: { id: data.vendorId },
-  });
-
+  const vendor = await prisma.vendor.findUnique({ where: { id: data.vendorId } });
   if (!vendor) throw new ApiError(404, 'Vendor not found');
 
   // Create Razorpay contact
@@ -50,20 +146,13 @@ export const setupVendorPayout = asyncHandler(async (req: Request, res: Response
     contact: vendor.phone || undefined,
     type: 'vendor',
     reference_id: vendor.id,
-    notes: {
-      vendor_id: vendor.id,
-      vendor_name: vendor.name,
-    },
+    notes: { vendor_id: vendor.id, vendor_name: vendor.name },
   });
-
-  if (!contactResult.success) {
-    throw new ApiError(500, `Failed to create Razorpay contact: ${contactResult.error}`);
-  }
-
+  if (!contactResult.success) throw new ApiError(500, `Failed to create Razorpay contact: ${contactResult.error}`);
   const razorpayContactId = contactResult.data.id;
 
   // Create fund account
-  const fundAccountResult = await createRazorpayFundAccount({
+  const fundResult = await createRazorpayFundAccount({
     contact_id: razorpayContactId,
     account_type: 'bank_account',
     bank_account: {
@@ -72,47 +161,34 @@ export const setupVendorPayout = asyncHandler(async (req: Request, res: Response
       account_number: data.accountNumber,
     },
   });
+  if (!fundResult.success) throw new ApiError(500, `Failed to create fund account: ${fundResult.error}`);
+  const razorpayFundAccountId = fundResult.data.id;
 
-  if (!fundAccountResult.success) {
-    throw new ApiError(500, `Failed to create fund account: ${fundAccountResult.error}`);
-  }
-
-  if (!fundAccountResult.data) {
-    throw new ApiError(500, 'Fund account creation returned no data');
-  }
-
-  const fundAccountData: any = fundAccountResult.data;
-  const razorpayFundAccountId = fundAccountData.id;
-
-  // Update vendor with Razorpay details
+  // Persist all details
   const updatedVendor = await prisma.vendor.update({
     where: { id: data.vendorId },
     data: {
       bankName: data.bankName,
       accountName: data.accountName,
       accountNumber: data.accountNumber,
-      routingNumber: data.ifscCode, // Store IFSC in routingNumber field
-      // Store Razorpay IDs in a JSON field or create new fields
-      // For now, we'll add them to notes or create a separate table
+      routingNumber: data.ifscCode,
+      razorpayContactId,
+      razorpayFundAccountId,
     },
   });
 
-  // Create audit log
   await prisma.auditLog.create({
     data: {
       entityType: 'vendor',
       entityId: vendor.id,
-      eventType: 'razorpay_setup_completed',
+      eventType: 'razorpay_bank_setup_completed',
       actor: 'system',
-      metadata: {
-        razorpayContactId,
-        razorpayFundAccountId,
-      } as any,
+      metadata: { razorpayContactId, razorpayFundAccountId } as any,
     },
   });
 
   return res.status(200).json(
-    new ApiResponse(200, 'Vendor setup for Razorpay payouts', {
+    new ApiResponse(200, 'Vendor bank account setup for Razorpay payouts', {
       vendor: updatedVendor,
       razorpayContactId,
       razorpayFundAccountId,
@@ -120,11 +196,134 @@ export const setupVendorPayout = asyncHandler(async (req: Request, res: Response
   );
 });
 
-// ─── Create Payout for Invoice ────────────────────────
+/**
+ * POST /api/v1/payouts/setup-vendor-vpa
+ * Create Razorpay contact + VPA (UPI) fund account for a vendor
+ */
+export const setupVendorVpa = asyncHandler(async (req: Request, res: Response) => {
+  const data = setupVendorVpaSchema.parse(req.body);
+
+  const vendor = await prisma.vendor.findUnique({ where: { id: data.vendorId } });
+  if (!vendor) throw new ApiError(404, 'Vendor not found');
+
+  const contactResult = await createRazorpayContact({
+    name: vendor.name,
+    email: vendor.email || undefined,
+    contact: vendor.phone || undefined,
+    type: 'vendor',
+    reference_id: vendor.id,
+    notes: { vendor_id: vendor.id },
+  });
+  if (!contactResult.success) throw new ApiError(500, `Failed to create contact: ${contactResult.error}`);
+  const razorpayContactId = contactResult.data.id;
+
+  const fundResult = await createRazorpayFundAccount({
+    contact_id: razorpayContactId,
+    account_type: 'vpa',
+    vpa: { address: data.vpaAddress },
+  });
+  if (!fundResult.success) throw new ApiError(500, `Failed to create VPA fund account: ${fundResult.error}`);
+  const razorpayFundAccountId = fundResult.data.id;
+
+  const updatedVendor = await prisma.vendor.update({
+    where: { id: data.vendorId },
+    data: { razorpayContactId, razorpayFundAccountId },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'vendor',
+      entityId: vendor.id,
+      eventType: 'razorpay_vpa_setup_completed',
+      actor: 'system',
+      metadata: { razorpayContactId, razorpayFundAccountId, vpa: data.vpaAddress } as any,
+    },
+  });
+
+  return res.status(200).json(
+    new ApiResponse(200, 'Vendor VPA (UPI) setup for Razorpay payouts', {
+      vendor: updatedVendor,
+      razorpayContactId,
+      razorpayFundAccountId,
+    })
+  );
+});
+
+/**
+ * GET /api/v1/payouts/contacts
+ * Fetch all Razorpay contacts
+ */
+export const getContacts = asyncHandler(async (req: Request, res: Response) => {
+  const { count, skip } = req.query as any;
+  const result = await fetchRazorpayContacts({
+    count: count ? Number(count) : undefined,
+    skip: skip ? Number(skip) : undefined,
+  });
+  if (!result.success) throw new ApiError(500, `Failed to fetch contacts: ${result.error}`);
+  return res.json(new ApiResponse(200, 'Contacts fetched', result.data));
+});
+
+/**
+ * GET /api/v1/payouts/contacts/:contactId
+ * Fetch a single Razorpay contact
+ */
+export const getContact = asyncHandler(async (req: Request, res: Response) => {
+  const result = await fetchRazorpayContact(req.params.contactId);
+  if (!result.success) throw new ApiError(500, `Failed to fetch contact: ${result.error}`);
+  return res.json(new ApiResponse(200, 'Contact fetched', result.data));
+});
+
+// ════════════════════════════════════════════════════
+// FUND ACCOUNTS
+// ════════════════════════════════════════════════════
+
+/**
+ * GET /api/v1/payouts/fund-accounts
+ * Fetch all fund accounts (optionally filtered by contact_id)
+ */
+export const getFundAccounts = asyncHandler(async (req: Request, res: Response) => {
+  const { contact_id, count, skip } = req.query as any;
+  const result = await fetchRazorpayFundAccounts({
+    contact_id,
+    count: count ? Number(count) : undefined,
+    skip: skip ? Number(skip) : undefined,
+  });
+  if (!result.success) throw new ApiError(500, `Failed to fetch fund accounts: ${result.error}`);
+  return res.json(new ApiResponse(200, 'Fund accounts fetched', result.data));
+});
+
+/**
+ * GET /api/v1/payouts/fund-accounts/:fundAccountId
+ * Fetch a single fund account
+ */
+export const getFundAccount = asyncHandler(async (req: Request, res: Response) => {
+  const result = await fetchRazorpayFundAccount(req.params.fundAccountId);
+  if (!result.success) throw new ApiError(500, `Failed to fetch fund account: ${result.error}`);
+  return res.json(new ApiResponse(200, 'Fund account fetched', result.data));
+});
+
+/**
+ * PATCH /api/v1/payouts/fund-accounts/:fundAccountId/toggle
+ * Activate or deactivate a fund account
+ */
+export const toggleFundAccount = asyncHandler(async (req: Request, res: Response) => {
+  const { active } = z.object({ active: z.boolean() }).parse(req.body);
+  const result = await toggleRazorpayFundAccount(req.params.fundAccountId, active);
+  if (!result.success) throw new ApiError(500, `Failed to toggle fund account: ${result.error}`);
+  return res.json(new ApiResponse(200, `Fund account ${active ? 'activated' : 'deactivated'}`, result.data));
+});
+
+// ════════════════════════════════════════════════════
+// PAYOUTS
+// ════════════════════════════════════════════════════
+
+/**
+ * POST /api/v1/payouts
+ * Create a payout for an approved invoice
+ */
 export const createPayout = asyncHandler(async (req: Request, res: Response) => {
   const data = createPayoutSchema.parse(req.body);
 
-  // Get invoice with vendor details
   const invoice = await prisma.invoice.findUnique({
     where: { id: data.invoiceId },
     include: { vendor: true, matchedPo: true },
@@ -132,70 +331,25 @@ export const createPayout = asyncHandler(async (req: Request, res: Response) => 
 
   if (!invoice) throw new ApiError(404, 'Invoice not found');
   if (!invoice.vendor) throw new ApiError(400, 'Invoice has no associated vendor');
-  if (invoice.status !== 'approved') {
-    throw new ApiError(400, 'Invoice must be approved before creating payout');
-  }
+  if (invoice.status !== 'approved') throw new ApiError(400, 'Invoice must be in "approved" status to create a payout');
 
-  // Check if vendor has bank details
-  if (!invoice.vendor.accountNumber || !invoice.vendor.routingNumber) {
-    throw new ApiError(400, 'Vendor bank details not configured. Please setup vendor for payouts first.');
-  }
-
-  // Check if payout already exists for this invoice
+  // Prevent duplicate payouts
   const existingPayout = await prisma.payment.findFirst({
     where: {
       invoiceId: data.invoiceId,
-      status: { in: ['scheduled', 'processing', 'paid', 'completed'] },
+      status: { in: ['scheduled', 'processing', 'paid'] },
     },
   });
+  if (existingPayout) throw new ApiError(400, 'A payout already exists for this invoice');
 
-  if (existingPayout) {
-    throw new ApiError(400, 'Payout already exists for this invoice');
-  }
-
-  // Get Razorpay fund account ID (you'll need to store this during vendor setup)
-  // For now, we'll need to create contact and fund account on the fly
-  // In production, store these IDs in the vendor table
-
-  // Create Razorpay contact
-  const contactResult = await createRazorpayContact({
-    name: invoice.vendor.name,
-    email: invoice.vendor.email || undefined,
-    contact: invoice.vendor.phone || undefined,
-    type: 'vendor',
-    reference_id: invoice.vendor.id,
-  });
-
-  if (!contactResult.success) {
-    throw new ApiError(500, `Failed to create Razorpay contact: ${contactResult.error}`);
-  }
-
-  // Create fund account
-  const fundAccountResult = await createRazorpayFundAccount({
-    contact_id: contactResult.data.id,
-    account_type: 'bank_account',
-    bank_account: {
-      name: invoice.vendor.accountName || invoice.vendor.name,
-      ifsc: invoice.vendor.routingNumber || '',
-      account_number: invoice.vendor.accountNumber || '',
-    },
-  });
-
-  if (!fundAccountResult.success) {
-    throw new ApiError(500, `Failed to create fund account: ${fundAccountResult.error}`);
-  }
-
-  if (!fundAccountResult.data) {
-    throw new ApiError(500, 'Fund account creation returned no data');
-  }
-
-  const fundAccountData: any = fundAccountResult.data;
+  // Ensure vendor has Razorpay setup
+  const { fundAccountId } = await ensureRazorpaySetup(invoice.vendor.id);
 
   // Create Razorpay payout
   const amountInPaise = convertToPaise(data.amount);
   const payoutResult = await createRazorpayPayout({
     account_number: process.env.RAZORPAY_ACCOUNT_NUMBER || '',
-    fund_account_id: fundAccountData.id,
+    fund_account_id: fundAccountId,
     amount: amountInPaise,
     currency: data.currency,
     mode: data.mode,
@@ -212,34 +366,27 @@ export const createPayout = asyncHandler(async (req: Request, res: Response) => 
     },
   });
 
-  if (!payoutResult.success) {
-    throw new ApiError(500, `Failed to create payout: ${payoutResult.error}`);
-  }
+  if (!payoutResult.success) throw new ApiError(500, `Failed to create payout: ${payoutResult.error}`);
+  const rzPayout = payoutResult.data;
 
-  const razorpayPayout = payoutResult.data;
-
-  // Create payment record in database
+  // Persist payment record
   const payment = await prisma.payment.create({
     data: {
       invoiceId: data.invoiceId,
       amountPaid: data.amount,
       currency: data.currency,
-      stripeId: razorpayPayout.id, // Store Razorpay payout ID in stripeId field
-      status: razorpayPayout.status === 'queued' ? 'scheduled' : 'processing',
+      stripeId: rzPayout.id,
+      status: rzPayout.status === 'queued' ? 'scheduled' : 'processing',
       scheduledDate: new Date(),
       poId: invoice.matchedPoId || undefined,
     },
   });
 
-  // Update invoice status
   await prisma.invoice.update({
     where: { id: data.invoiceId },
-    data: {
-      status: 'payment_processing',
-    },
+    data: { status: 'payment_processing' },
   });
 
-  // Create audit log
   await prisma.auditLog.create({
     data: {
       entityType: 'payment',
@@ -249,10 +396,10 @@ export const createPayout = asyncHandler(async (req: Request, res: Response) => 
       invoiceId: invoice.id,
       paymentId: payment.id,
       metadata: {
-        razorpayPayoutId: razorpayPayout.id,
+        razorpayPayoutId: rzPayout.id,
         amount: data.amount,
         mode: data.mode,
-        status: razorpayPayout.status,
+        status: rzPayout.status,
       } as any,
     },
   });
@@ -261,235 +408,94 @@ export const createPayout = asyncHandler(async (req: Request, res: Response) => 
     new ApiResponse(201, 'Payout created successfully', {
       payment,
       razorpayPayout: {
-        id: razorpayPayout.id,
-        status: razorpayPayout.status,
-        amount: convertToRupees(razorpayPayout.amount),
-        currency: razorpayPayout.currency,
-        mode: razorpayPayout.mode,
+        id: rzPayout.id,
+        status: rzPayout.status,
+        amount: convertToRupees(rzPayout.amount),
+        currency: rzPayout.currency,
+        mode: rzPayout.mode,
+        utr: rzPayout.utr || null,
       },
     })
   );
 });
 
-// ─── Get Payout Status ────────────────────────────────
+/**
+ * GET /api/v1/payouts
+ * Fetch all payouts for the business account
+ */
+export const getAllPayouts = asyncHandler(async (req: Request, res: Response) => {
+  const { count, skip } = req.query as any;
+  const accountNumber = process.env.RAZORPAY_ACCOUNT_NUMBER || '';
+  if (!accountNumber) throw new ApiError(500, 'RAZORPAY_ACCOUNT_NUMBER not configured');
+
+  const result = await fetchAllRazorpayPayouts({
+    account_number: accountNumber,
+    count: count ? Number(count) : undefined,
+    skip: skip ? Number(skip) : undefined,
+  });
+  if (!result.success) throw new ApiError(500, `Failed to fetch payouts: ${result.error}`);
+  return res.json(new ApiResponse(200, 'Payouts fetched', result.data));
+});
+
+/**
+ * GET /api/v1/payouts/:payoutId
+ * Fetch a single payout status from Razorpay
+ */
 export const getPayoutStatus = asyncHandler(async (req: Request, res: Response) => {
-  const payoutId = Array.isArray(req.params.payoutId) 
-    ? req.params.payoutId[0] 
-    : req.params.payoutId;
-
-  const payoutResult = await getRazorpayPayout(payoutId);
-
-  if (!payoutResult.success) {
-    throw new ApiError(500, `Failed to fetch payout: ${payoutResult.error}`);
-  }
-
-  const payout = payoutResult.data;
+  const payoutId = req.params.payoutId;
+  const result = await getRazorpayPayout(payoutId);
+  if (!result.success) throw new ApiError(500, `Failed to fetch payout: ${result.error}`);
+  const p = result.data;
 
   return res.json(
     new ApiResponse(200, 'Payout status fetched', {
-      id: payout.id,
-      status: payout.status,
-      amount: convertToRupees(payout.amount),
-      currency: payout.currency,
-      mode: payout.mode,
-      purpose: payout.purpose,
-      reference_id: payout.reference_id,
-      utr: payout.utr,
-      created_at: payout.created_at,
+      id: p.id,
+      status: p.status,
+      amount: convertToRupees(p.amount),
+      currency: p.currency,
+      mode: p.mode,
+      purpose: p.purpose,
+      reference_id: p.reference_id,
+      utr: p.utr,
+      narration: p.narration,
+      created_at: p.created_at,
     })
   );
 });
 
-// ─── Cancel Payout ────────────────────────────────────
+/**
+ * POST /api/v1/payouts/:payoutId/cancel
+ * Cancel a queued payout
+ */
 export const cancelPayout = asyncHandler(async (req: Request, res: Response) => {
-  const payoutId = Array.isArray(req.params.payoutId) 
-    ? req.params.payoutId[0] 
-    : req.params.payoutId;
+  const payoutId = req.params.payoutId;
+  const result = await cancelRazorpayPayout(payoutId);
+  if (!result.success) throw new ApiError(500, `Failed to cancel payout: ${result.error}`);
 
-  const payoutResult = await cancelRazorpayPayout(payoutId);
-
-  if (!payoutResult.success) {
-    throw new ApiError(500, `Failed to cancel payout: ${payoutResult.error}`);
-  }
-
-  // Update payment record
-  const payment = await prisma.payment.findFirst({
-    where: { stripeId: payoutId },
-  });
-
+  // Update DB record
+  const payment = await prisma.payment.findFirst({ where: { stripeId: payoutId } });
   if (payment) {
     await prisma.payment.update({
       where: { id: payment.id },
-      data: {
-        status: 'failed',
-        failureReason: 'Cancelled by user',
-      },
+      data: { status: 'failed', failureReason: 'Cancelled by user' },
     });
-
-    // Update invoice status back to approved
     if (payment.invoiceId) {
-      await prisma.invoice.update({
-        where: { id: payment.invoiceId },
-        data: { status: 'approved' },
-      });
+      await prisma.invoice.update({ where: { id: payment.invoiceId }, data: { status: 'approved' } });
     }
   }
 
-  return res.json(new ApiResponse(200, 'Payout cancelled successfully', payoutResult.data));
+  return res.json(new ApiResponse(200, 'Payout cancelled successfully', result.data));
 });
 
-// ─── Razorpay Webhook Handler ─────────────────────────
-export const handleRazorpayWebhook = asyncHandler(async (req: Request, res: Response) => {
-  const webhookSignature = req.headers['x-razorpay-signature'] as string;
-  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
-
-  // Verify webhook signature
-  const isValid = verifyRazorpayWebhook(
-    JSON.stringify(req.body),
-    webhookSignature,
-    webhookSecret
-  );
-
-  if (!isValid) {
-    throw new ApiError(401, 'Invalid webhook signature');
-  }
-
-  const event = req.body;
-  const eventType = event.event;
-  const payoutData = event.payload?.payout?.entity;
-
-  if (!payoutData) {
-    return res.json({ success: true, message: 'Event received but no payout data' });
-  }
-
-  const razorpayPayoutId = payoutData.id;
-
-  // Find payment record
-  const payment = await prisma.payment.findFirst({
-    where: { stripeId: razorpayPayoutId },
-    include: { invoice: true },
-  });
-
-  if (!payment) {
-    console.warn(`Payment not found for Razorpay payout ID: ${razorpayPayoutId}`);
-    return res.json({ success: true, message: 'Payment record not found' });
-  }
-
-  // Handle different event types
-  switch (eventType) {
-    case 'payout.processed':
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: 'processing',
-        },
-      });
-      break;
-
-    case 'payout.paid':
-      const amountPaid = convertToRupees(payoutData.amount);
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: 'paid',
-          paidAt: new Date(),
-        },
-      });
-
-      // Update invoice
-      if (payment.invoice) {
-        const newAmountPaid = Number(payment.invoice.amountPaid) + amountPaid;
-        const totalAmount = Number(payment.invoice.totalAmount);
-        const isPaid = newAmountPaid >= totalAmount;
-
-        await prisma.invoice.update({
-          where: { id: payment.invoice.id },
-          data: {
-            status: isPaid ? 'paid' : 'payment_processing',
-            amountPaid: newAmountPaid,
-            amountDue: Math.max(0, totalAmount - newAmountPaid),
-          },
-        });
-
-        // Update PO if exists
-        if (payment.invoice.matchedPoId) {
-          const po = await prisma.purchaseOrder.findUnique({
-            where: { id: payment.invoice.matchedPoId },
-          });
-
-          if (po) {
-            const newRemaining = Math.max(0, Number(po.remainingAmount) - amountPaid);
-            await prisma.purchaseOrder.update({
-              where: { id: po.id },
-              data: {
-                remainingAmount: newRemaining,
-                status: newRemaining <= 0 ? 'closed' : po.status,
-              },
-            });
-          }
-        }
-      }
-      break;
-
-    case 'payout.failed':
-    case 'payout.rejected':
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: 'failed',
-          failureReason: payoutData.failure_reason || 'Payout failed',
-        },
-      });
-
-      // Update invoice status back to approved
-      if (payment.invoiceId) {
-        await prisma.invoice.update({
-          where: { id: payment.invoiceId },
-          data: { status: 'approved' },
-        });
-      }
-      break;
-
-    case 'payout.reversed':
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: 'failed',
-          failureReason: 'Payout reversed',
-        },
-      });
-      break;
-  }
-
-  // Create audit log
-  await prisma.auditLog.create({
-    data: {
-      entityType: 'payment',
-      entityId: payment.id,
-      eventType: `razorpay_${eventType}`,
-      actor: 'razorpay_webhook',
-      paymentId: payment.id,
-      invoiceId: payment.invoiceId || undefined,
-      metadata: {
-        razorpayPayoutId,
-        status: payoutData.status,
-        utr: payoutData.utr,
-      } as any,
-    },
-  });
-
-  return res.json({ success: true, message: 'Webhook processed' });
-});
-
-// ─── Bulk Payout for Approved Invoices ────────────────
+/**
+ * POST /api/v1/payouts/bulk
+ * Create payouts for multiple approved invoices
+ */
 export const createBulkPayouts = asyncHandler(async (req: Request, res: Response) => {
-  const { invoiceIds, mode = 'IMPS' } = z.object({
-    invoiceIds: z.array(z.string().uuid()),
-    mode: z.enum(['IMPS', 'NEFT', 'RTGS', 'UPI']).default('IMPS'),
-  }).parse(req.body);
+  const { invoiceIds, mode, purpose } = bulkPayoutSchema.parse(req.body);
 
-  const results = [];
-  const errors = [];
+  const results: any[] = [];
+  const errors: any[] = [];
 
   for (const invoiceId of invoiceIds) {
     try {
@@ -498,21 +504,53 @@ export const createBulkPayouts = asyncHandler(async (req: Request, res: Response
         include: { vendor: true },
       });
 
-      if (!invoice) {
-        errors.push({ invoiceId, error: 'Invoice not found' });
-        continue;
-      }
+      if (!invoice) { errors.push({ invoiceId, error: 'Invoice not found' }); continue; }
+      if (invoice.status !== 'approved') { errors.push({ invoiceId, error: 'Invoice not approved' }); continue; }
+      if (!invoice.vendor) { errors.push({ invoiceId, error: 'No vendor linked' }); continue; }
 
-      if (invoice.status !== 'approved') {
-        errors.push({ invoiceId, error: 'Invoice not approved' });
-        continue;
-      }
+      const totalAmount = Number(invoice.totalAmount || 0);
+      if (!totalAmount) { errors.push({ invoiceId, error: 'Invoice has no total amount' }); continue; }
 
-      // Create payout (reuse logic from createPayout)
-      // This is simplified - in production, extract the logic to a shared function
-      results.push({ invoiceId, status: 'queued' });
-    } catch (error: any) {
-      errors.push({ invoiceId, error: error.message });
+      const existing = await prisma.payment.findFirst({
+        where: { invoiceId, status: { in: ['scheduled', 'processing', 'paid'] } },
+      });
+      if (existing) { errors.push({ invoiceId, error: 'Payout already exists' }); continue; }
+
+      const { fundAccountId } = await ensureRazorpaySetup(invoice.vendor.id);
+
+      const payoutResult = await createRazorpayPayout({
+        account_number: process.env.RAZORPAY_ACCOUNT_NUMBER || '',
+        fund_account_id: fundAccountId,
+        amount: convertToPaise(totalAmount),
+        currency: 'INR',
+        mode,
+        purpose,
+        queue_if_low_balance: true,
+        reference_id: invoice.id,
+        narration: `Bulk payout for Invoice ${invoice.invoiceNumber}`,
+        notes: { invoice_id: invoice.id, invoice_number: invoice.invoiceNumber },
+      });
+
+      if (!payoutResult.success) { errors.push({ invoiceId, error: payoutResult.error }); continue; }
+      const rzPayout = payoutResult.data;
+
+      const payment = await prisma.payment.create({
+        data: {
+          invoiceId,
+          amountPaid: totalAmount,
+          currency: 'INR',
+          stripeId: rzPayout.id,
+          status: rzPayout.status === 'queued' ? 'scheduled' : 'processing',
+          scheduledDate: new Date(),
+          poId: invoice.matchedPoId || undefined,
+        },
+      });
+
+      await prisma.invoice.update({ where: { id: invoiceId }, data: { status: 'payment_processing' } });
+
+      results.push({ invoiceId, paymentId: payment.id, razorpayPayoutId: rzPayout.id, status: rzPayout.status });
+    } catch (err: any) {
+      errors.push({ invoiceId, error: err.message || 'Unknown error' });
     }
   }
 
@@ -524,4 +562,137 @@ export const createBulkPayouts = asyncHandler(async (req: Request, res: Response
       errors,
     })
   );
+});
+
+// ════════════════════════════════════════════════════
+// WEBHOOK
+// ════════════════════════════════════════════════════
+
+/**
+ * POST /api/v1/payouts/webhook
+ * Handle Razorpay payout webhooks (payout.paid, payout.failed, etc.)
+ */
+export const handleRazorpayWebhook = asyncHandler(async (req: Request, res: Response) => {
+  const webhookSignature = req.headers['x-razorpay-signature'] as string;
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || '';
+
+  const isValid = verifyRazorpayWebhook(JSON.stringify(req.body), webhookSignature, webhookSecret);
+  if (!isValid) throw new ApiError(401, 'Invalid webhook signature');
+
+  const event = req.body;
+  const eventType: string = event.event;
+  const payoutData = event.payload?.payout?.entity;
+
+  if (!payoutData) {
+    return res.json({ success: true, message: 'Webhook received — no payout entity' });
+  }
+
+  const razorpayPayoutId = payoutData.id;
+
+  const payment = await prisma.payment.findFirst({
+    where: { stripeId: razorpayPayoutId },
+    include: { invoice: true },
+  });
+
+  if (!payment) {
+    console.warn(`No DB payment found for Razorpay payout: ${razorpayPayoutId}`);
+    return res.json({ success: true, message: 'Payment record not found — skipping' });
+  }
+
+  switch (eventType) {
+    case 'payout.queued':
+      await prisma.payment.update({ where: { id: payment.id }, data: { status: 'scheduled' } });
+      break;
+
+    case 'payout.initiated':
+    case 'payout.processed':
+      await prisma.payment.update({ where: { id: payment.id }, data: { status: 'processing' } });
+      break;
+
+    case 'payout.paid': {
+      const amountPaid = convertToRupees(payoutData.amount);
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'paid', paidAt: new Date() },
+      });
+
+      if (payment.invoice) {
+        const newPaid = Number(payment.invoice.amountPaid) + amountPaid;
+        const total = Number(payment.invoice.totalAmount);
+        const isPaid = newPaid >= total;
+
+        await prisma.invoice.update({
+          where: { id: payment.invoice.id },
+          data: {
+            status: isPaid ? 'paid' : 'payment_processing',
+            amountPaid: newPaid,
+            amountDue: Math.max(0, total - newPaid),
+          },
+        });
+
+        // Deduct from PO remaining amount
+        if (payment.invoice.matchedPoId) {
+          const po = await prisma.purchaseOrder.findUnique({ where: { id: payment.invoice.matchedPoId } });
+          if (po) {
+            const newRemaining = Math.max(0, Number(po.remainingAmount) - amountPaid);
+            await prisma.purchaseOrder.update({
+              where: { id: po.id },
+              data: { remainingAmount: newRemaining, status: newRemaining <= 0 ? 'closed' : po.status },
+            });
+          }
+        }
+      }
+      break;
+    }
+
+    case 'payout.failed':
+    case 'payout.rejected':
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'failed', failureReason: payoutData.failure_reason || eventType },
+      });
+      if (payment.invoiceId) {
+        await prisma.invoice.update({ where: { id: payment.invoiceId }, data: { status: 'approved' } });
+      }
+      break;
+
+    case 'payout.reversed':
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'failed', failureReason: 'Payout reversed by bank' },
+      });
+      break;
+
+    case 'payout.cancelled':
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'failed', failureReason: 'Payout cancelled' },
+      });
+      if (payment.invoiceId) {
+        await prisma.invoice.update({ where: { id: payment.invoiceId }, data: { status: 'approved' } });
+      }
+      break;
+
+    default:
+      console.info(`Unhandled Razorpay event: ${eventType}`);
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'payment',
+      entityId: payment.id,
+      eventType: `razorpay_${eventType.replace('.', '_')}`,
+      actor: 'razorpay_webhook',
+      paymentId: payment.id,
+      invoiceId: payment.invoiceId || undefined,
+      metadata: {
+        razorpayPayoutId,
+        status: payoutData.status,
+        utr: payoutData.utr,
+        failure_reason: payoutData.failure_reason,
+      } as any,
+    },
+  });
+
+  return res.json({ success: true, message: `Webhook processed: ${eventType}` });
 });

@@ -20,12 +20,17 @@ model Vendor {
   isVerified    Boolean  @default(false) @map("is_verified")
   createdAt     DateTime @default(now()) @map("created_at")
 
+  // Razorpay IDs (stored after setup-vendor)
+  razorpayContactId     String?  @map("razorpay_contact_id") @db.VarChar(100)
+  razorpayFundAccountId String?  @map("razorpay_fund_account_id") @db.VarChar(100)
+
   invoices       Invoice[]
   purchaseOrders PurchaseOrder[] @relation("VendorToPO")
   vendorAliases  VendorAlias[]
 
   @@map("vendors")
 }
+
 
 // ─── PURCHASE ORDER ───────────────────────────────────
 model PurchaseOrder {
