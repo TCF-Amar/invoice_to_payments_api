@@ -14,26 +14,27 @@ interface OnboardingLinkPayload {
 }
 
 interface TransferPayload {
-    amount: number;        
+    amount: number;
     stripeAccountId: string;
     description?: string;
 }
 
 // Creates a Stripe Express Connected Account for a vendor
 export async function createStripeVendorAccount(data: VendorAccountPayload) {
-    return await stripe.accounts.create({ 
+    return await stripe.accounts.create({
         type: 'express',
-        country: 'IN',
+        country: 'US',
         email: data.email,
     });
 }
 
 // Generates an onboarding link for vendor KYC
 export async function createVendorOnboardingLink({ accountId }: OnboardingLinkPayload) {
+    const baseUrl = process.env.APP_URL || 'http://localhost:3000';
     return await stripe.accountLinks.create({
         account: accountId,
-        refresh_url: `${process.env.APP_URL}/reauth`,  
-        return_url: `${process.env.APP_URL}/success`,
+        refresh_url: `${baseUrl}/reauth`,
+        return_url: `${baseUrl}/success`,
         type: 'account_onboarding',
     });
 }
@@ -42,7 +43,7 @@ export async function createVendorOnboardingLink({ accountId }: OnboardingLinkPa
 export async function transferToVendor(data: TransferPayload) {
     return await stripe.transfers.create({
         amount: data.amount,
-        currency: 'inr',
+        currency: 'usd',
         destination: data.stripeAccountId,
         ...(data.description && { description: data.description }),
     });

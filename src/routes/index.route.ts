@@ -103,33 +103,33 @@ router.patch ('/payments/:id/status',                   paymentCtrl.updatePaymen
 // POST   /api/v1/payouts/:payoutId/cancel                 → cancel queued payout
 // POST   /api/v1/payouts/webhook                          → Razorpay webhook handler
 
-// Balance
-router.get   ('/payouts/balance',                                           payoutCtrl.getBankingBalance);
+// // Balance
+// router.get   ('/payouts/balance',                                           payoutCtrl.getBankingBalance);
 
-// Vendor setup
-router.post  ('/payouts/setup-vendor',                                      payoutCtrl.setupVendorPayout);
-router.post  ('/payouts/setup-vendor-vpa',                                  payoutCtrl.setupVendorVpa);
+// // Vendor setup
+// router.post  ('/payouts/setup-vendor',                                      payoutCtrl.setupVendorPayout);
+// router.post  ('/payouts/setup-vendor-vpa',                                  payoutCtrl.setupVendorVpa);
 
-// Contacts
-router.get   ('/payouts/contacts',                                          payoutCtrl.getContacts);
-router.get   ('/payouts/contacts/:contactId',                               payoutCtrl.getContact);
+// // Contacts
+// router.get   ('/payouts/contacts',                                          payoutCtrl.getContacts);
+// router.get   ('/payouts/contacts/:contactId',                               payoutCtrl.getContact);
 
-// Fund Accounts
-router.get   ('/payouts/fund-accounts',                                     payoutCtrl.getFundAccounts);
-router.get   ('/payouts/fund-accounts/:fundAccountId',                      payoutCtrl.getFundAccount);
-router.patch ('/payouts/fund-accounts/:fundAccountId/toggle',               payoutCtrl.toggleFundAccount);
+// // Fund Accounts
+// router.get   ('/payouts/fund-accounts',                                     payoutCtrl.getFundAccounts);
+// router.get   ('/payouts/fund-accounts/:fundAccountId',                      payoutCtrl.getFundAccount);
+// router.patch ('/payouts/fund-accounts/:fundAccountId/toggle',               payoutCtrl.toggleFundAccount);
 
-// Webhook (must be before /:payoutId to avoid route conflict)
-router.post  ('/payouts/webhook',                                           payoutCtrl.handleRazorpayWebhook);
+// // Webhook (must be before /:payoutId to avoid route conflict)
+// router.post  ('/payouts/webhook',                                           payoutCtrl.handleRazorpayWebhook);
 
-// Bulk
-router.post  ('/payouts/bulk',                                              payoutCtrl.createBulkPayouts);
+// // Bulk
+// router.post  ('/payouts/bulk',                                              payoutCtrl.createBulkPayouts);
 
-// Payout CRUD
-router.get   ('/payouts',                                                   payoutCtrl.getAllPayouts);
-router.post  ('/payouts',                                                   payoutCtrl.createPayout);
-router.get   ('/payouts/:payoutId',                                         payoutCtrl.getPayoutStatus);
-router.post  ('/payouts/:payoutId/cancel',                                  payoutCtrl.cancelPayout);
+// // Payout CRUD
+// router.get   ('/payouts',                                                   payoutCtrl.getAllPayouts);
+// router.post  ('/payouts',                                                   payoutCtrl.createPayout);
+// router.get   ('/payouts/:payoutId',                                         payoutCtrl.getPayoutStatus);
+// router.post  ('/payouts/:payoutId/cancel',                                  payoutCtrl.cancelPayout);
 
 // ════════════════════════════════════════════════════
 // STRIPE PAYOUT ROUTES
