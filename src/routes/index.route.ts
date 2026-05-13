@@ -68,12 +68,6 @@ router.patch ('/invoices/:id',                          invoiceCtrl.updateInvoic
 router.patch ('/invoices/:id/status',                   invoiceCtrl.updateInvoiceStatus); // ← n8n verdict
 router.delete('/invoices/:id',                          invoiceCtrl.deleteInvoice);
 
-// n8n automation helpers
-router.post  ('/invoices/:id/create-payment-intent',    invoiceCtrl.createPaymentIntent);
-router.patch ('/invoices/:id/payment-pending',         invoiceCtrl.markPaymentPending);
-router.patch ('/invoices/:id/mark-failed',              invoiceCtrl.markFailed);
-router.patch ('/invoices/stripe/payment-success',       invoiceCtrl.stripePaymentSuccess);
-
 // ════════════════════════════════════════════════════
 // PAYMENT ROUTES
 // ════════════════════════════════════════════════════
@@ -95,6 +89,7 @@ router.patch ('/payments/:id/status',                   paymentCtrl.updatePaymen
 
 router.post  ('/payouts/stripe/setup-vendor',                               stripePayoutCtrl.setupVendorStripeAccount);
 router.get   ('/payouts/stripe/onboarding-link/:vendorId',                  stripePayoutCtrl.getStripeOnboardingLink);
+router.get   ('/payouts/stripe/status/:vendorId',                           stripePayoutCtrl.checkVendorStripeStatus);
 router.post  ('/payouts/stripe',                                            stripePayoutCtrl.createStripePayout);
 router.post  ('/payouts/stripe/bulk',                                       stripePayoutCtrl.createBulkStripePayouts);
 

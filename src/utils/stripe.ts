@@ -48,3 +48,8 @@ export async function transferToVendor(data: TransferPayload) {
         ...(data.description && { description: data.description }),
     });
 }
+
+// Retrieves full account details from Stripe (to check onboarding/restrictions)
+export async function getStripeAccount(accountId: string) {
+    return await stripe.accounts.retrieve(accountId);
+}

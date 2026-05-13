@@ -5,7 +5,8 @@ import { ApiError, ApiResponse, asyncHandler } from '../utils/helpers.js';
 import {
     createStripeVendorAccount,
     createVendorOnboardingLink,
-    transferToVendor
+    transferToVendor,
+    getStripeAccount
 } from '../utils/stripe.js';
 
 const setupVendorStripeSchema = z.object({
@@ -83,10 +84,36 @@ export const getStripeOnboardingLink = asyncHandler(async (req: Request, res: Re
 
     const link = await createVendorOnboardingLink({ accountId: vendor.stripeAccountId });
 
-    return res.json(
+    return res.status(200).json(
         new ApiResponse(200, 'Stripe Onboarding Link Generated', {
             vendorId: vendor.id,
             onboardingUrl: link.url,
+        })
+    );
+});
+
+/**
+ * GET /api/v1/payouts/stripe/status/:vendorId
+ * Check the real-time status of a vendor's Stripe account
+ */
+export const checkVendorStripeStatus = asyncHandler(async (req: Request, res: Response) => {
+    const vendorId = req.params.vendorId as string;
+    const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+    
+    if (!vendor) throw new ApiError(404, 'Vendor not found');
+    const stripeAccountId = (vendor as any).stripeAccountId;
+    if (!stripeAccountId) throw new ApiError(400, 'Vendor has no Stripe account setup');
+
+    const account = await getStripeAccount(stripeAccountId);
+
+    return res.json(
+        new ApiResponse(200, 'Stripe Account Status Fetched', {
+            vendorId,
+            stripeAccountId,
+            isEnabled: account.payouts_enabled,
+            details_submitted: account.details_submitted,
+            charges_enabled: account.charges_enabled,
+            requirements: account.requirements,
         })
     );
 });
@@ -109,6 +136,12 @@ export const createStripePayout = asyncHandler(async (req: Request, res: Respons
 
     const vendor = invoice.vendor as typeof invoice.vendor & { stripeAccountId?: string | null };
     if (!vendor.stripeAccountId) throw new ApiError(400, 'Vendor has no Stripe Connect account setup');
+
+    // Check if account is restricted
+    const account = await getStripeAccount(vendor.stripeAccountId);
+    if (!account.payouts_enabled) {
+        throw new ApiError(400, 'Vendor account is currently "Restricted". They must complete onboarding before receiving payouts.');
+    }
 
     // Prevent duplicate payouts
     const existingPayout = await prisma.payment.findFirst({
