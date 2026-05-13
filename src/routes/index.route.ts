@@ -5,6 +5,7 @@ import * as invoiceCtrl from '../controllers/invoice.controller.js';
 import * as paymentCtrl from '../controllers/payment.controller.js';
 import * as payoutCtrl from '../controllers/payout.controller.js';
 import * as stripePayoutCtrl from '../controllers/stripe.payout.controller.js';
+import * as ticketCtrl from '../controllers/ticket.controller.js';
 
 const router = Router();
 
@@ -143,6 +144,19 @@ router.post  ('/payouts/stripe/setup-vendor',                               stri
 router.get   ('/payouts/stripe/onboarding-link/:vendorId',                  stripePayoutCtrl.getStripeOnboardingLink);
 router.post  ('/payouts/stripe',                                            stripePayoutCtrl.createStripePayout);
 router.post  ('/payouts/stripe/bulk',                                       stripePayoutCtrl.createBulkStripePayouts);
+
+// ════════════════════════════════════════════════════
+// TICKET ROUTES
+// ════════════════════════════════════════════════════
+// POST   /api/v1/tickets                                → raise new ticket
+// GET    /api/v1/tickets                                → list all tickets
+// GET    /api/v1/tickets/:id                            → get ticket details
+// PATCH  /api/v1/tickets/:id                            → update ticket status/priority
+
+router.post  ('/tickets',                                ticketCtrl.raiseTicket);
+router.get   ('/tickets',                                ticketCtrl.listTickets);
+router.get   ('/tickets/:id',                            ticketCtrl.getTicketById);
+router.patch ('/tickets/:id',                            ticketCtrl.updateTicket);
 
 export default router;
 

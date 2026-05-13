@@ -30,6 +30,7 @@ model Vendor {
   invoices       Invoice[]
   purchaseOrders PurchaseOrder[] @relation("VendorToPO")
   vendorAliases  VendorAlias[]
+  tickets        Ticket[]
 
   @@map("vendors")
 }
@@ -115,6 +116,7 @@ model Invoice {
   payments  Payment[]
   auditLogs AuditLog[]
   lineItems InvoiceLineItem[]
+  tickets   Ticket[]
 
   @@unique([vendorId, invoiceNumber], map: "uq_invoice_vendor_number")
   @@map("invoices")
@@ -198,4 +200,24 @@ model VendorAlias {
   createdAt      DateTime @default(now()) @map("created_at")
 
   @@map("vendor_aliases")
+}
+
+// ─── TICKET ───────────────────────────────────────────
+model Ticket {
+  id          String   @id @default(uuid())
+  subject     String   @db.VarChar(255)
+  description String   @db.Text
+  status      String   @default("open") @db.VarChar(30)
+  priority    String   @default("medium") @db.VarChar(30)
+  
+  vendorId    String?  @map("vendor_id")
+  vendor      Vendor?  @relation(fields: [vendorId], references: [id])
+  
+  invoiceId   String?  @map("invoice_id")
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id])
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@map("tickets")
 }
