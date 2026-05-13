@@ -3,3 +3,5 @@ node_modules
 dist
 
 *.md
+
+vendor_payout_workflow.json
