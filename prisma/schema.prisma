@@ -20,10 +20,6 @@ model Vendor {
   isVerified    Boolean  @default(false) @map("is_verified")
   createdAt     DateTime @default(now()) @map("created_at")
 
-  // Razorpay IDs (stored after setup-vendor)
-  razorpayContactId     String?  @map("razorpay_contact_id") @db.VarChar(100)
-  razorpayFundAccountId String?  @map("razorpay_fund_account_id") @db.VarChar(100)
-
   // Stripe IDs
   stripeAccountId       String?  @map("stripe_account_id") @db.VarChar(255)
 

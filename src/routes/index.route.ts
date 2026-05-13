@@ -3,7 +3,6 @@ import * as vendorCtrl from '../controllers/vendor.controller.js';
 import * as poCtrl from '../controllers/po.controller.js';
 import * as invoiceCtrl from '../controllers/invoice.controller.js';
 import * as paymentCtrl from '../controllers/payment.controller.js';
-import * as payoutCtrl from '../controllers/payout.controller.js';
 import * as stripePayoutCtrl from '../controllers/stripe.payout.controller.js';
 import * as ticketCtrl from '../controllers/ticket.controller.js';
 
@@ -85,52 +84,6 @@ router.patch ('/invoices/stripe/payment-success',       invoiceCtrl.stripePaymen
 router.get   ('/payments/invoice/:invoiceId',           paymentCtrl.getPaymentsByInvoice);
 router.post  ('/payments',                              paymentCtrl.createPayment);
 router.patch ('/payments/:id/status',                   paymentCtrl.updatePaymentStatus);
-
-// ════════════════════════════════════════════════════
-// RAZORPAY PAYOUT ROUTES
-// ════════════════════════════════════════════════════
-// GET    /api/v1/payouts/balance                           → account balances
-// POST   /api/v1/payouts/setup-vendor                     → setup bank account for vendor
-// POST   /api/v1/payouts/setup-vendor-vpa                 → setup VPA/UPI for vendor
-// GET    /api/v1/payouts/contacts                         → list all Razorpay contacts
-// GET    /api/v1/payouts/contacts/:contactId              → fetch single contact
-// GET    /api/v1/payouts/fund-accounts                    → list fund accounts
-// GET    /api/v1/payouts/fund-accounts/:fundAccountId     → fetch single fund account
-// PATCH  /api/v1/payouts/fund-accounts/:fundAccountId/toggle → activate/deactivate
-// GET    /api/v1/payouts                                  → list all payouts
-// POST   /api/v1/payouts                                  → create payout for invoice
-// POST   /api/v1/payouts/bulk                             → bulk payout for invoices
-// GET    /api/v1/payouts/:payoutId                        → get payout status
-// POST   /api/v1/payouts/:payoutId/cancel                 → cancel queued payout
-// POST   /api/v1/payouts/webhook                          → Razorpay webhook handler
-
-// // Balance
-// router.get   ('/payouts/balance',                                           payoutCtrl.getBankingBalance);
-
-// // Vendor setup
-// router.post  ('/payouts/setup-vendor',                                      payoutCtrl.setupVendorPayout);
-// router.post  ('/payouts/setup-vendor-vpa',                                  payoutCtrl.setupVendorVpa);
-
-// // Contacts
-// router.get   ('/payouts/contacts',                                          payoutCtrl.getContacts);
-// router.get   ('/payouts/contacts/:contactId',                               payoutCtrl.getContact);
-
-// // Fund Accounts
-// router.get   ('/payouts/fund-accounts',                                     payoutCtrl.getFundAccounts);
-// router.get   ('/payouts/fund-accounts/:fundAccountId',                      payoutCtrl.getFundAccount);
-// router.patch ('/payouts/fund-accounts/:fundAccountId/toggle',               payoutCtrl.toggleFundAccount);
-
-// // Webhook (must be before /:payoutId to avoid route conflict)
-// router.post  ('/payouts/webhook',                                           payoutCtrl.handleRazorpayWebhook);
-
-// // Bulk
-// router.post  ('/payouts/bulk',                                              payoutCtrl.createBulkPayouts);
-
-// // Payout CRUD
-// router.get   ('/payouts',                                                   payoutCtrl.getAllPayouts);
-// router.post  ('/payouts',                                                   payoutCtrl.createPayout);
-// router.get   ('/payouts/:payoutId',                                         payoutCtrl.getPayoutStatus);
-// router.post  ('/payouts/:payoutId/cancel',                                  payoutCtrl.cancelPayout);
 
 // ════════════════════════════════════════════════════
 // STRIPE PAYOUT ROUTES
