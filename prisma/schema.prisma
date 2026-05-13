@@ -27,6 +27,9 @@ model Vendor {
   // Stripe IDs
   stripeAccountId       String?  @map("stripe_account_id") @db.VarChar(255)
 
+  // Cashfree IDs
+  cashfreeBeneficiaryId String?  @map("cashfree_beneficiary_id") @db.VarChar(100)
+
   invoices       Invoice[]
   purchaseOrders PurchaseOrder[] @relation("VendorToPO")
   vendorAliases  VendorAlias[]
@@ -130,6 +133,7 @@ model Payment {
   amountPaid        Decimal?    @map("amount") @db.Decimal(12, 2)
   currency          String      @default("USD") @db.VarChar(3)
   stripeId          String?     @map("stripe_payment_id") @db.VarChar(255)
+  cashfreeTransferId String?    @map("cashfree_transfer_id") @db.VarChar(255)
   scheduledDate     DateTime?   @map("scheduled_date") @db.Date
   paidAt            DateTime?   @map("executed_at")
   status            String      @default("scheduled") @db.VarChar(30)

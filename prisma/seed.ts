@@ -1,10 +1,10 @@
 import prisma from '../src/utils/prisma.js';
 
 async function main() {
-  console.log('Seeding database...');
+  console.log('🚀 Starting deep seed...');
 
   // ─── Cleanup ────────────────────────────────────────
-  console.log('Cleaning up existing data...');
+  console.log('🧹 Cleaning up existing data...');
   await prisma.auditLog.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.invoiceLineItem.deleteMany();
@@ -13,95 +13,87 @@ async function main() {
   await prisma.purchaseOrder.deleteMany();
   await prisma.vendorAlias.deleteMany();
   await prisma.vendor.deleteMany();
-  console.log('Cleanup complete.');
 
   // ─── Vendors ────────────────────────────────────────
-  const vendor1 = await prisma.vendor.upsert({
-    where: { email: 'billing@acme.com' },
-    update: {},
-    create: {
-      name:          'Acme Supplies Ltd.',
-      email:         'billing@acme.com',
-      phone:         '+1-555-0101',
-      address:       '123 Main St, NY 10001',
-      bankName:      'Chase Bank N.A.',
-      accountName:   'Acme Supplies Ltd.',
-      accountNumber: '7845123690',
-      routingNumber: '021000021',
-      isVerified:    true,
-    }
-  });
+  console.log('🏢 Creating vendors...');
+  const vendorData = [
+    { name: 'Acme Supplies Ltd.', email: 'billing@acme.com', isVerified: true },
+    { name: 'Nexus Tech Distributors', email: 'accounts@nexustech.com', isVerified: true },
+    { name: 'Apex Industrial Supplies', email: 'invoices@apexindustrial.com', isVerified: false },
+    { name: 'Global Logistics Inc.', email: 'finance@globallogistics.com', isVerified: true },
+    { name: 'Office Depot Solutions', email: 'orders@officedepot.com', isVerified: true },
+  ];
 
-  const vendor2 = await prisma.vendor.upsert({
-    where: { email: 'accounts@nexustech.com' },
-    update: {},
-    create: {
-      name:       'Nexus Tech Distributors',
-      email:      'accounts@nexustech.com',
-      phone:      '+1-512-444-7890',
-      address:    '789 Innovation Blvd, Austin TX 78701',
-      isVerified: true,
-    }
-  });
+  const vendors = [];
+  for (const v of vendorData) {
+    const created = await prisma.vendor.create({ data: v });
+    vendors.push(created);
+  }
 
-  const vendor3 = await prisma.vendor.upsert({
-    where: { email: 'invoices@apexindustrial.com' },
-    update: {},
-    create: {
-      name:       'Apex Industrial Supplies',
-      email:      'invoices@apexindustrial.com',
-      phone:      '+1-313-555-9900',
-      address:    '321 Industrial Park, Detroit MI 48201',
-      isVerified: false, // unverified — for testing
-    }
-  });
+  // ─── Purchase Orders (10 minimum) ───────────────────
+  console.log('📦 Creating 12 Purchase Orders...');
+  const pos = [];
+  const poStatuses = ['open', 'delivered', 'closed'];
 
-  // ─── Purchase Orders ─────────────────────────────────
-  const po1 = await prisma.purchaseOrder.upsert({
-    where: { poNumber: 'PO-445' },
-    update: {},
-    create: {
-      poNumber:        'PO-445',
-      vendorId:        vendor1.id,
-      approvedAmount:  10000,
-      remainingAmount: 7390,
-      currency:        'USD',
-      description:     'Office supplies Q3 2024',
-      status:          'delivered',
-    }
-  });
+  for (let i = 1; i <= 12; i++) {
+    const vendor = vendors[Math.floor(Math.random() * vendors.length)];
+    const amount = Math.floor(Math.random() * 15000) + 1000;
+    
+    const po = await prisma.purchaseOrder.create({
+      data: {
+        poNumber: `PO-${100 + i}`,
+        vendorId: vendor.id,
+        approvedAmount: amount,
+        remainingAmount: amount,
+        currency: 'USD',
+        description: `Bulk procurement for project ${String.fromCharCode(65 + (i % 26))}`,
+        status: poStatuses[i % 3],
+        lineItems: {
+          create: [
+            { description: 'Item Alpha', qty: 5, unitPrice: amount / 10, total: amount / 2 },
+            { description: 'Item Beta', qty: 2, unitPrice: amount / 4, total: amount / 2 },
+          ]
+        }
+      }
+    });
+    pos.push(po);
+  }
 
-  const po2 = await prisma.purchaseOrder.upsert({
-    where: { poNumber: 'PO-612' },
-    update: {},
-    create: {
-      poNumber:        'PO-612',
-      vendorId:        vendor2.id,
-      approvedAmount:  9000,
-      remainingAmount: 9000,
-      currency:        'USD',
-      description:     'IT Equipment Q4 2024',
-      status:          'open',
-    }
-  });
+  // ─── Invoices (50 minimum) ──────────────────────────
+  console.log('📄 Creating 55 Invoices...');
+  const invoiceStatuses = ['received', 'approved', 'rejected', 'paid', 'payment_processing'];
 
-  const po3 = await prisma.purchaseOrder.upsert({
-    where: { poNumber: 'PO-891' },
-    update: {},
-    create: {
-      poNumber:        'PO-891',
-      vendorId:        vendor3.id,
-      approvedAmount:  15000,
-      remainingAmount: 15000,
-      currency:        'USD',
-      description:     'Industrial parts Q2 2024',
-      status:          'open',
-    }
-  });
+  for (let i = 1; i <= 55; i++) {
+    const vendor = vendors[Math.floor(Math.random() * vendors.length)];
+    const status = invoiceStatuses[i % 5];
+    const amount = Math.floor(Math.random() * 5000) + 100;
+    
+    // Link to a PO for roughly 60% of invoices
+    const shouldLinkPO = Math.random() > 0.4;
+    const po = shouldLinkPO ? pos[Math.floor(Math.random() * pos.length)] : null;
 
-  console.log('✅ Seeded vendors:', vendor1.name, vendor2.name, vendor3.name);
-  console.log('✅ Seeded POs:', po1.poNumber, po2.poNumber, po3.poNumber);
-  console.log('Seeding complete!');
+    await prisma.invoice.create({
+      data: {
+        invoiceNumber: `INV-${2000 + i}`,
+        vendorId: vendor.id,
+        matchedPoId: po?.id,
+        poNumber: po?.poNumber,
+        invoiceDate: new Date(Date.now() - Math.floor(Math.random() * 10000000000)),
+        totalAmount: amount,
+        amountPaid: status === 'paid' ? amount : 0,
+        amountDue: status === 'paid' ? 0 : amount,
+        status: status,
+        lineItems: {
+          create: [
+            { description: `Service/Product Line ${i}`, qty: 1, unitPrice: amount, total: amount },
+          ]
+        }
+      }
+    });
+  }
+
+  console.log('✨ Seed complete!');
+  console.log(`Created: ${vendors.length} Vendors, ${pos.length} POs, 55 Invoices`);
 }
 
 main()
