@@ -31,11 +31,8 @@ npm install
 ```
 
 ### 2. Environment Configuration
-Create a `.env` file with:
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/invoice_db
-STRIPE_SECRET_KEY=sk_test_...
-PORT=3000
+```powershell
+cp .env .env.example
 ```
 
 ### 3. Database Initialization
@@ -85,6 +82,3 @@ npm run db:seed
 - **AuditLog**: System-wide event tracking.
 - **Ticket**: Issue tracking linked to Vendors/Invoices.
 
----
-**Version**: 1.2.0 (Stripe Payout Integration)  
-**Status**: Development / Production Ready

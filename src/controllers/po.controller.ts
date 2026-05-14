@@ -78,14 +78,13 @@ export const getPOByNumber = asyncHandler(async (req: Request, res: Response) =>
 export const createPO = asyncHandler(async (req: Request, res: Response) => {
   const data = createPOSchema.parse(req.body);
 
-  // Vendor exist karta hai?
   const vendor = await prisma.vendor.findUnique({ where: { id: data.vendorId } });
   if (!vendor) throw new ApiError(404, 'Vendor not found');
 
   const po = await prisma.purchaseOrder.create({
     data: {
       ...data,
-      remainingAmount: data.approvedAmount, // initially = approvedAmount
+      remainingAmount: data.approvedAmount, 
       deliveryDate:    data.deliveryDate ? new Date(data.deliveryDate) : null,
       lineItems:       data.lineItems ? { create: data.lineItems } : undefined,
     },
