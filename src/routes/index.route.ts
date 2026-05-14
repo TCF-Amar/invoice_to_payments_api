@@ -5,6 +5,7 @@ import * as invoiceCtrl from '../controllers/invoice.controller.js';
 import * as paymentCtrl from '../controllers/payment.controller.js';
 import * as stripePayoutCtrl from '../controllers/stripe.payout.controller.js';
 import * as ticketCtrl from '../controllers/ticket.controller.js';
+import * as dashboardCtrl from '../controllers/dashboard.controller.js';
 
 const router = Router();
 
@@ -105,6 +106,13 @@ router.post  ('/tickets',                                ticketCtrl.raiseTicket)
 router.get   ('/tickets',                                ticketCtrl.listTickets);
 router.get   ('/tickets/:id',                            ticketCtrl.getTicketById);
 router.patch ('/tickets/:id',                            ticketCtrl.updateTicket);
+
+// ════════════════════════════════════════════════════
+// DASHBOARD ROUTES
+// ════════════════════════════════════════════════════
+router.get   ('/dashboard/stats',                       dashboardCtrl.getDashboardStats);
+router.get   ('/dashboard/activity',                    dashboardCtrl.getRecentActivity);
+router.get   ('/dashboard/trends',                      dashboardCtrl.getInvoiceTrends);
 
 export default router;
 

@@ -118,3 +118,52 @@ export const deleteVendor = asyncHandler(async (req: Request, res: Response) => 
 
   return res.json(new ApiResponse(200, 'Vendor deleted', null));
 });
+
+/**
+ * Helper to find or create a vendor based on ID, Email, or Name.
+ * Used internally by PO and Invoice controllers.
+ */
+export const findOrCreateVendor = async (data: {
+  id?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}) => {
+  // 1. Try by ID (Check if it's a valid UUID before querying to avoid DB errors)
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id || '');
+  if (data.id && isUuid) {
+    try {
+      const v = await prisma.vendor.findUnique({ where: { id: data.id } });
+      if (v) return v;
+    } catch (e) {
+      // Ignore invalid UUID or search errors and proceed to name/email
+    }
+  }
+
+  // 2. Try by Email
+  if (data.email) {
+    const v = await prisma.vendor.findUnique({ where: { email: data.email } });
+    if (v) return v;
+  }
+
+  // 3. Try by Name
+  if (data.name) {
+    const v = await prisma.vendor.findFirst({
+      where: { name: { equals: data.name, mode: 'insensitive' } }
+    });
+    if (v) return v;
+
+    // 4. Create new if name provided but no match found
+    return await prisma.vendor.create({
+      data: {
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        address: data.address
+      }
+    });
+  }
+
+  return null;
+};

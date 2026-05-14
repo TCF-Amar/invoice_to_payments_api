@@ -38,6 +38,10 @@ model PurchaseOrder {
   poNumber        String    @unique @map("po_number") @db.VarChar(50)
   vendorId        String?   @map("vendor_id")
   vendor          Vendor?   @relation("VendorToPO", fields: [vendorId], references: [id])
+  
+  subtotal        Decimal   @default(0) @db.Decimal(12, 2)
+  taxRate         Decimal   @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount       Decimal   @default(0) @map("tax_amount") @db.Decimal(12, 2)
   approvedAmount  Decimal   @default(0) @map("approved_total") @db.Decimal(12, 2)
   remainingAmount Decimal?  @map("remaining_invoice_amount") @db.Decimal(12, 2)
   currency        String    @default("USD") @db.VarChar(3)

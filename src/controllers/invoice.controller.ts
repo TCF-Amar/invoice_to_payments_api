@@ -6,39 +6,39 @@ import { ApiError, ApiResponse, asyncHandler } from '../utils/helpers.js';
 // ─── Schemas ──────────────────────────────────────────
 const createInvoiceSchema = z.object({
   invoiceNumber: z.string().min(1),
-  poNumber: z.string().optional(),
-  vendorId: z.string().uuid().optional(),
-  matchedPoId: z.string().uuid().optional(),
-  vendorName: z.string().optional(),
-  vendorEmail: z.string().email().optional(),
-  vendorPhone: z.string().optional(),
-  vendorAddress: z.string().optional(),
-  billToCompany: z.string().optional(),
-  billToEmail: z.string().optional(),
-  billToAddress: z.string().optional(),
-  shipToCompany: z.string().optional(),
-  shipToAddress: z.string().optional(),
-  shipToPhone: z.string().optional(),
-  invoiceDate: z.string().optional(),
-  dueDate: z.string().optional(),
-  paymentTerms: z.string().optional(),
-  currency: z.string().optional(),  
-  subtotal: z.number().optional(),
-  discount: z.number().optional(),
-  taxRate: z.number().optional(),
-  taxAmount: z.number().optional(),
-  shipping: z.number().optional(),
-  totalAmount: z.number(),
-  amountDue: z.number().optional(),
-  lineItems: z.array(z.any()).optional(),
-  bankName: z.string().optional(),
-  accountName: z.string().optional(),
-  accountNumber: z.string().optional(),
-  routingNumber: z.string().optional(),
-  paymentMethod: z.string().optional(),
-  aiConfidence: z.number().optional(),
-  notes: z.string().optional(),
-  driveFileId: z.string().optional(),
+  poNumber: z.string().optional().or(z.literal('')),
+  vendorId: z.string().optional().or(z.literal('')),
+  matchedPoId: z.string().optional().or(z.literal('')),
+  vendorName: z.string().optional().nullable(),
+  vendorEmail: z.string().email().optional().or(z.literal('')).nullable(),
+  vendorPhone: z.string().optional().nullable(),
+  vendorAddress: z.string().optional().nullable(),
+  billToCompany: z.string().optional().nullable(),
+  billToEmail: z.string().optional().nullable(),
+  billToAddress: z.string().optional().nullable(),
+  shipToCompany: z.string().optional().nullable(),
+  shipToAddress: z.string().optional().nullable(),
+  shipToPhone: z.string().optional().nullable(),
+  invoiceDate: z.string().optional().nullable(),
+  dueDate: z.string().optional().nullable(),
+  paymentTerms: z.string().optional().nullable(),
+  currency: z.string().optional().nullable(),
+  subtotal: z.coerce.number().optional().nullable(),
+  discount: z.coerce.number().optional().nullable(),
+  taxRate: z.coerce.number().optional().nullable(),
+  taxAmount: z.coerce.number().optional().nullable(),
+  shipping: z.coerce.number().optional().nullable(),
+  totalAmount: z.coerce.number(),
+  amountDue: z.coerce.number().optional().nullable(),
+  lineItems: z.array(z.any()).optional().nullable(),
+  bankName: z.string().optional().nullable(),
+  accountName: z.string().optional().nullable(),
+  accountNumber: z.string().optional().nullable(),
+  routingNumber: z.string().optional().nullable(),
+  paymentMethod: z.string().optional().nullable(),
+  aiConfidence: z.coerce.number().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  driveFileId: z.string().optional().nullable(),
 });
 
 const updateStatusSchema = z.object({
@@ -149,13 +149,68 @@ export const createInvoice = asyncHandler(async (req: Request, res: Response) =>
   });
   if (existing) throw new ApiError(409, `Invoice ${data.invoiceNumber} already exists`);
 
+  // 1. Resolve Existing Vendor ONLY (Do NOT create)
+  let finalVendorId = data.vendorId;
+
+  if (finalVendorId) {
+    const v = await prisma.vendor.findUnique({ where: { id: finalVendorId } });
+    if (!v) finalVendorId = undefined;
+  }
+
+  if (!finalVendorId && (data.vendorEmail || data.vendorName)) {
+    const v = await prisma.vendor.findFirst({
+      where: {
+        OR: [
+          data.vendorEmail ? { email: data.vendorEmail } : {},
+          data.vendorName ? { name: { equals: data.vendorName, mode: 'insensitive' } } : {}
+        ].filter(cond => Object.keys(cond).length > 0) as any
+      }
+    });
+    if (v) finalVendorId = v.id;
+  }
+
+  // 2. Resolve PO (Auto-match by poNumber if matchedPoId is missing)
+  let finalPoId = data.matchedPoId;
+  if (!finalPoId && data.poNumber) {
+    const po = await prisma.purchaseOrder.findFirst({
+      where: { poNumber: { equals: data.poNumber, mode: 'insensitive' } }
+    });
+    if (po) finalPoId = po.id;
+  }
+
   const invoice = await prisma.invoice.create({
     data: {
-      ...data,
-      invoiceDate: data.invoiceDate ? new Date(data.invoiceDate) : null,
-      dueDate: data.dueDate ? new Date(data.dueDate) : null,
-      lineItems: data.lineItems ? { create: data.lineItems } : undefined,
-      status: 'received',
+      invoiceNumber: data.invoiceNumber,
+      poNumber:      data.poNumber,
+      vendorId:      finalVendorId ?? undefined,
+      matchedPoId:   finalPoId ?? undefined,
+      billToCompany: data.billToCompany ?? undefined,
+      billToEmail:   data.billToEmail ?? undefined,
+      billToAddress: data.billToAddress ?? undefined,
+      shipToCompany: data.shipToCompany ?? undefined,
+      shipToAddress: data.shipToAddress ?? undefined,
+      shipToPhone:   data.shipToPhone ?? undefined,
+      invoiceDate:   data.invoiceDate ? new Date(data.invoiceDate) : null,
+      dueDate:       data.dueDate ? new Date(data.dueDate) : null,
+      paymentTerms:  data.paymentTerms ?? undefined,
+      currency:      data.currency || 'USD',
+      subtotal:      data.subtotal ?? 0,
+      discount:      data.discount ?? 0,
+      taxRate:       data.taxRate ?? 0,
+      taxAmount:     data.taxAmount ?? 0,
+      shipping:      data.shipping ?? 0,
+      totalAmount:   data.totalAmount,
+      amountDue:     data.amountDue ?? 0,
+      bankName:      data.bankName ?? undefined,
+      accountName:   data.accountName ?? undefined,
+      accountNumber: data.accountNumber ?? undefined,
+      routingNumber: data.routingNumber ?? undefined,
+      paymentMethod: data.paymentMethod ?? undefined,
+      aiConfidence:  data.aiConfidence ?? undefined,
+      notes:         data.notes ?? undefined,
+      driveFileId:   data.driveFileId ?? undefined,
+      lineItems:     data.lineItems ? { create: data.lineItems } : undefined,
+      status:        'received',
     },
     include: {
       vendor: true,
@@ -218,13 +273,48 @@ export const updateInvoiceStatus = asyncHandler(async (req: Request, res: Respon
 export const updateInvoice = asyncHandler(async (req: Request, res: Response) => {
   const data = createInvoiceSchema.partial().parse(req.body);
 
+  // Handle lineItems sync if provided
+  if (data.lineItems) {
+    await prisma.invoiceLineItem.deleteMany({
+      where: { invoiceId: req.params.id as string }
+    });
+  }
+
   const invoice = await prisma.invoice.update({
     where: { id: req.params.id as string },
     data: {
-      ...data,
-      invoiceDate: data.invoiceDate ? new Date(data.invoiceDate) : undefined,
-      dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-    } as any
+      invoiceNumber: data.invoiceNumber,
+      poNumber:      data.poNumber,
+      vendorId:      data.vendorId ?? undefined,
+      matchedPoId:   data.matchedPoId ?? undefined,
+      billToCompany: data.billToCompany ?? undefined,
+      billToEmail:   data.billToEmail ?? undefined,
+      billToAddress: data.billToAddress ?? undefined,
+      shipToCompany: data.shipToCompany ?? undefined,
+      shipToAddress: data.shipToAddress ?? undefined,
+      shipToPhone:   data.shipToPhone ?? undefined,
+      invoiceDate:   data.invoiceDate ? new Date(data.invoiceDate) : undefined,
+      dueDate:       data.dueDate ? new Date(data.dueDate) : undefined,
+      paymentTerms:  data.paymentTerms ?? undefined,
+      currency:      data.currency ?? undefined,
+      subtotal:      data.subtotal ?? undefined,
+      discount:      data.discount ?? undefined,
+      taxRate:       data.taxRate ?? undefined,
+      taxAmount:     data.taxAmount ?? undefined,
+      shipping:      data.shipping ?? undefined,
+      totalAmount:   data.totalAmount,
+      amountDue:     data.amountDue ?? undefined,
+      bankName:      data.bankName ?? undefined,
+      accountName:   data.accountName ?? undefined,
+      accountNumber: data.accountNumber ?? undefined,
+      routingNumber: data.routingNumber ?? undefined,
+      paymentMethod: data.paymentMethod ?? undefined,
+      aiConfidence:  data.aiConfidence ?? undefined,
+      notes:         data.notes ?? undefined,
+      driveFileId:   data.driveFileId ?? undefined,
+      lineItems:     data.lineItems ? { create: data.lineItems } : undefined,
+    },
+    include: { vendor: true, lineItems: true, matchedPo: true }
   });
 
   return res.json(new ApiResponse(200, 'Invoice updated', invoice));
