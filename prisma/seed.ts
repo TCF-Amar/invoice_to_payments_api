@@ -35,13 +35,13 @@ async function main() {
     vendors.push(v);
   }
 
-  // ─── Purchase Orders (20) ───────────────────────────
-  console.log('📦 Creating 20 Purchase Orders...');
+  // ─── Purchase Orders (40) ───────────────────────────
+  console.log('📦 Creating 40 Purchase Orders (4 per vendor)...');
   const pos = [];
   const poStatuses = ['open', 'delivered', 'closed'];
 
-  for (let i = 1; i <= 20; i++) {
-    const vendor = vendors[i % 10];
+  for (let i = 1; i <= 40; i++) {
+    const vendor = vendors[(i - 1) % 10]; // Cycle through 10 vendors
     const amount = Math.floor(Math.random() * 20000) + 5000;
     
     const po = await prisma.purchaseOrder.create({
@@ -51,12 +51,12 @@ async function main() {
         approvedAmount: amount,
         remainingAmount: amount,
         currency: 'USD',
-        description: `Quarterly supplies for Unit ${i}`,
+        description: `Project ${String.fromCharCode(65 + (i % 26))} - Phase ${Math.ceil(i / 10)}`,
         status: poStatuses[i % 3],
         lineItems: {
           create: [
-            { description: 'Component A', qty: 10, unitPrice: amount / 20, total: amount / 2 },
-            { description: 'Service B', qty: 1, unitPrice: amount / 2, total: amount / 2 },
+            { description: 'Equipment Supply', qty: 5, unitPrice: amount / 10, total: amount / 2 },
+            { description: 'Installation Services', qty: 1, unitPrice: amount / 2, total: amount / 2 },
           ]
         }
       }
@@ -64,40 +64,8 @@ async function main() {
     pos.push(po);
   }
 
-  // ─── Invoices (50) ──────────────────────────────────
-  console.log('📄 Creating 50 Invoices...');
-  const invoiceStatuses = ['received', 'approved', 'rejected', 'paid', ];
-
-  for (let i = 1; i <= 50; i++) {
-    const vendor = vendors[i % 10];
-    const status = invoiceStatuses[i % 5];
-    const amount = Math.floor(Math.random() * 8000) + 500;
-    
-    // Link to PO for 70% of invoices
-    const po = (i % 3 !== 0) ? pos[Math.floor(Math.random() * pos.length)] : null;
-
-    await prisma.invoice.create({
-      data: {
-        invoiceNumber: `INV-${3000 + i}`,
-        vendorId: vendor.id,
-        matchedPoId: po?.id,
-        poNumber: po?.poNumber,
-        invoiceDate: new Date(Date.now() - Math.floor(Math.random() * 15552000000)), // up to 6 months ago
-        totalAmount: amount,
-        amountPaid: status === 'paid' ? amount : 0,
-        amountDue: status === 'paid' ? 0 : amount,
-        status: status,
-        lineItems: {
-          create: [
-            { description: `Line item for Invoice ${i}`, qty: 1, unitPrice: amount, total: amount },
-          ]
-        }
-      }
-    });
-  }
-
   console.log('✨ Seed complete!');
-  console.log(`Created: ${vendors.length} Vendors, ${pos.length} POs, 50 Invoices`);
+  console.log(`Created: ${vendors.length} Vendors, ${pos.length} POs`);
 }
 
 main()

@@ -6,15 +6,15 @@ import { ApiError, ApiResponse, asyncHandler } from '../utils/helpers.js';
 // ─── Validation Schemas ───────────────────────────────
 const createVendorSchema = z.object({
   name: z.string().min(1),
-  email: z.string().email(),
+  email: z.string().email().optional(),
   phone: z.string().optional(),
   address: z.string().optional(),
-  gstin: z.string().optional(),
   bankName: z.string().optional(),
   accountName: z.string().optional(),
   accountNumber: z.string().optional(),
   routingNumber: z.string().optional(),
   isVerified: z.boolean().optional().default(false),
+  stripeAccountId: z.string().optional(),
 });
 
 const updateVendorSchema = createVendorSchema.partial();

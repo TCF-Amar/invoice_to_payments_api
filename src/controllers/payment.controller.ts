@@ -5,41 +5,109 @@ import { ApiError, ApiResponse, asyncHandler } from '../utils/helpers.js';
 
 // ─── Schemas ──────────────────────────────────────────
 const createPaymentSchema = z.object({
-  invoiceId:  z.string().uuid(),
-  amountPaid: z.number().positive(),
-  currency:   z.string().default('INR'),
-  paymentId:  z.string().optional(),
+  invoiceId: z.string().uuid().optional(),
+  amountPaid: z.number().positive().optional(),
+  currency: z.string().default('USD'),
+  paymentId: z.string().optional(),
   status: z.enum(['pending', 'processing', 'paid', 'completed', 'failed']).default('pending'),
-  
+  stripeAccountId: z.string().optional(),
+  // Stripe-specific fields from transfer response
+  id: z.string().optional(),
+  amount: z.number().optional(),
+  transfer_group: z.string().optional(),
 });
 
 // ─── Get Payments by Invoice ──────────────────────────
 export const getPaymentsByInvoice = asyncHandler(async (req: Request, res: Response) => {
   const payments = await prisma.payment.findMany({
-    where:   { invoiceId: req.params.invoiceId as string },
+    where: { invoiceId: req.params.invoiceId as string },
     orderBy: { createdAt: 'desc' }
   });
 
   return res.json(new ApiResponse(200, 'Payments fetched', payments));
 });
 
+// ─── Get Payment Table Data (General) ─────────────────
+export const getPaymentTableData = asyncHandler(async (req: Request, res: Response) => {
+  const { page = '1', limit = '10', status, noInvoice } = req.query;
+
+  const where: any = {};
+  if (status) where.status = status as string;
+  if (noInvoice === 'true') where.invoiceId = null;
+
+  const [payments, total] = await Promise.all([
+    prisma.payment.findMany({
+      where,
+      skip: (Number(page) - 1) * Number(limit),
+      take: Number(limit),
+      orderBy: { createdAt: 'desc' },
+      include: {
+        invoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            vendor: { select: { id: true, name: true } }
+          }
+        },
+        purchaseOrder: {
+          select: {
+            id: true,
+            poNumber: true,
+            vendor: { select: { id: true, name: true } }
+          }
+        }
+      }
+    }),
+    prisma.payment.count({ where })
+  ]);
+
+  // Flatten vendor info for easier table usage
+  const formattedPayments = payments.map(p => {
+    const vendor = p.invoice?.vendor || p.purchaseOrder?.vendor || null;
+    return {
+      ...p,
+      vendorName: vendor?.name || 'N/A',
+      vendorId: vendor?.id || null,
+      invoiceNumber: p.invoice?.invoiceNumber || null,
+      poNumber: p.purchaseOrder?.poNumber || null,
+    };
+  });
+
+  return res.json(new ApiResponse(200, 'Payment table data fetched', {
+    payments: formattedPayments,
+    total,
+    page: Number(page),
+    totalPages: Math.ceil(total / Number(limit))
+  }));
+});
+
 // ─── Create Payment (Razorpay webhook triggers this) ────
 export const createPayment = asyncHandler(async (req: Request, res: Response) => {
-  const data = createPaymentSchema.parse(req.body);
+  const body = req.body;
+  const data = createPaymentSchema.parse(body);
+
+  // Normalize data from Stripe transfer response if present
+  const invoiceId = data.invoiceId || data.transfer_group;
+  const stripeId = data.paymentId || data.id;
+  const amountPaid = data.amountPaid || (data.amount ? data.amount / 100 : 0);
+  const status = (body.status as any) || 'paid'; // Stripe transfers are usually 'paid' immediately
+
+  if (!invoiceId) throw new ApiError(400, 'Invoice ID (or transfer_group) is required');
+  if (amountPaid <= 0) throw new ApiError(400, 'Amount must be positive');
 
   const invoice = await prisma.invoice.findUnique({
-    where:   { id: data.invoiceId },
+    where: { id: invoiceId },
     include: { matchedPo: true }
   });
 
   if (!invoice) throw new ApiError(404, 'Invoice not found');
-  if (invoice.status === 'paid') throw new ApiError(400, 'Invoice already paid');
+  if (invoice.status === 'paid') return res.json(new ApiResponse(200, 'Invoice already paid', null));
 
   // Check if payment already exists
   let payment;
-  if (data.paymentId) {
+  if (stripeId) {
     payment = await prisma.payment.findFirst({
-      where: { stripeId: data.paymentId }
+      where: { stripeId: stripeId }
     });
   }
 
@@ -53,33 +121,38 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
     payment = await prisma.payment.update({
       where: { id: payment.id },
       data: {
-        ...data,
-        poId: invoice.matchedPoId ?? undefined,
-        paidAt: ['paid', 'completed'].includes(data.status) ? new Date() : null,
+        currency: data.currency,
+        status: status,
+        stripeAccountId: data.stripeAccountId,
+        transferGroup: data.transfer_group,
+        purchaseOrder: invoice.matchedPoId ? { connect: { id: invoice.matchedPoId } } : undefined,
+        paidAt: ['paid', 'completed'].includes(status) ? new Date() : null,
       }
     });
   } else {
     payment = await prisma.payment.create({
       data: {
-        invoiceId: data.invoiceId,
-        amountPaid: data.amountPaid,
+        invoice: { connect: { id: invoiceId } },
+        amountPaid: amountPaid,
         currency: data.currency,
-        stripeId: data.paymentId,
-        status: data.status,
-        poId: invoice.matchedPoId ?? undefined,
-        paidAt: ['paid', 'completed'].includes(data.status) ? new Date() : null,
+        stripeId: stripeId,
+        stripeAccountId: data.stripeAccountId,
+        transferGroup: data.transfer_group,
+        status: status,
+        purchaseOrder: invoice.matchedPoId ? { connect: { id: invoice.matchedPoId } } : undefined,
+        paidAt: ['paid', 'completed'].includes(status) ? new Date() : null,
       }
     });
   }
 
   // Update invoice amountPaid (Only if this payment is becoming 'paid' or 'completed')
-  if (['paid', 'completed'].includes(data.status)) {
-    const newAmountPaid = Number(invoice.amountPaid) + data.amountPaid;
+  if (['paid', 'completed'].includes(status)) {
+    const newAmountPaid = Number(invoice.amountPaid) + amountPaid;
     const totalAmount = Number(invoice.totalAmount);
     const isPaid = newAmountPaid >= totalAmount;
 
     await prisma.invoice.update({
-      where: { id: data.invoiceId },
+      where: { id: invoiceId },
       data: {
         amountPaid: newAmountPaid,
         amountDue: Math.max(0, totalAmount - newAmountPaid),
@@ -94,7 +167,7 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
       });
 
       if (po) {
-        const newRemaining = Math.max(0, Number(po.remainingAmount) - data.amountPaid);
+        const newRemaining = Math.max(0, Number(po.remainingAmount) - amountPaid);
         await prisma.purchaseOrder.update({
           where: { id: po.id },
           data: {
@@ -112,10 +185,10 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
       entityType: 'payment',
       entityId: payment.id,
       eventType: isNew ? 'payment_created' : 'payment_updated',
-      actor: 'razorpay',
-      invoiceId: data.invoiceId,
+      actor: 'stripe',
+      invoiceId: invoiceId,
       paymentId: payment.id,
-      metadata: { amountPaid: data.amountPaid, paymentId: data.paymentId, status: data.status } as any
+      metadata: { amountPaid: amountPaid, paymentId: stripeId, status: status } as any
     }
   });
 
@@ -126,8 +199,8 @@ export const createPayment = asyncHandler(async (req: Request, res: Response) =>
 // ─── Update Payment Status (Razorpay webhook) ───────────
 export const updatePaymentStatus = asyncHandler(async (req: Request, res: Response) => {
   const { status, paymentId, failureReason } = z.object({
-    status:        z.enum(['pending','processing','paid','completed','failed','refunded']),
-    paymentId:     z.string().optional(),
+    status: z.enum(['pending', 'processing', 'paid', 'completed', 'failed', 'refunded']),
+    paymentId: z.string().optional(),
     failureReason: z.string().optional(),
   }).parse(req.body);
 

@@ -37,6 +37,23 @@ export const errorMiddleware = (
     });
   }
 
+  // Prisma column not found (schema mismatch)
+  if (err.code === 'P2022') {
+    console.error('Prisma Schema Mismatch (P2022):', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Database schema mismatch. Please run migrations.',
+    });
+  }
+
+  // Prisma foreign key constraint
+  if (err.code === 'P2003') {
+    return res.status(400).json({
+      success: false,
+      message: 'Foreign key constraint failed. Related record not found.',
+    });
+  }
+
   // Custom ApiError
   if (err instanceof ApiError) {
     return res.status(err.statusCode).json({
@@ -47,9 +64,9 @@ export const errorMiddleware = (
   }
 
   // Generic error
-  console.error('Unhandled error:', err);
+  console.error('Unhandled Server Error:', err);
   return res.status(500).json({
     success: false,
-    message: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
   });
 };

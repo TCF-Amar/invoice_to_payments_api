@@ -99,7 +99,7 @@ export const getStripeOnboardingLink = asyncHandler(async (req: Request, res: Re
 export const checkVendorStripeStatus = asyncHandler(async (req: Request, res: Response) => {
     const vendorId = req.params.vendorId as string;
     const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
-    
+
     if (!vendor) throw new ApiError(404, 'Vendor not found');
     const stripeAccountId = (vendor as any).stripeAccountId;
     if (!stripeAccountId) throw new ApiError(400, 'Vendor has no Stripe account setup');
@@ -316,4 +316,58 @@ export const createBulkStripePayouts = asyncHandler(async (req: Request, res: Re
             errors,
         })
     );
+});
+
+// ─── n8n Payout Trigger ───────────────────────────
+export const triggerN8nPayout = asyncHandler(async (req: Request, res: Response) => {
+    const n8nWebhookUrl = `${process.env['N8N__WEBHOOK_URL']}/payouts`;
+    if (!n8nWebhookUrl) {
+        throw new ApiError(500, 'N8N payout trigger webhook URL is not configured');
+    }
+
+    // Determine if single or bulk
+    const isBulk = Array.isArray(req.body);
+    const data = isBulk ? req.body : [req.body];
+
+    // Log the request
+    console.log(`Triggering ${isBulk ? 'bulk' : 'single'} payout via n8n:`, data.length, 'items');
+
+    let n8nResponse: any = { success: false };
+    let n8nError = null;
+
+    try {
+        const response = await fetch(n8nWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                payouts: data,
+                isBulk,
+                source: 'api_payout_trigger',
+                triggeredAt: new Date().toISOString(),
+            }),
+        });
+
+        try {
+            n8nResponse = await response.json();
+        } catch (e) {
+            n8nResponse = { success: response.ok, status: response.status };
+        }
+
+        if (!response.ok) {
+            n8nError = `N8N responded with status ${response.status}`;
+        }
+    } catch (error: any) {
+        console.error('N8N Payout Trigger Error:', error);
+        n8nError = error.message;
+    }
+
+    return res.json(new ApiResponse(200, 'Payout request forwarded to n8n', {
+        isBulk,
+        count: data.length,
+        n8nStatus: {
+            sent: !n8nError,
+            response: n8nResponse,
+            error: n8nError
+        }
+    }));
 });

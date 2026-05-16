@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
+import jwt from 'jsonwebtoken';
 import prisma from '../utils/prisma.js';
+
 import { ApiError, ApiResponse, asyncHandler } from '../utils/helpers.js';
 
 // ─── Schemas ──────────────────────────────────────────
@@ -22,7 +24,7 @@ const createInvoiceSchema = z.object({
   invoiceDate: z.string().optional(),
   dueDate: z.string().optional(),
   paymentTerms: z.string().optional(),
-  currency: z.string().optional(),  
+  currency: z.string().optional(),
   subtotal: z.number().optional(),
   discount: z.number().optional(),
   taxRate: z.number().optional(),
@@ -243,3 +245,307 @@ export const deleteInvoice = asyncHandler(async (req: Request, res: Response) =>
 
   return res.json(new ApiResponse(200, 'Invoice deleted', null));
 });
+
+// ─── Generate Upload Link (Trigger n8n) ───────────
+const generateUploadLinkSchema = z.object({
+  vendorEmail: z.string().email(),
+  poNumber: z.string().min(1),
+  expiresIn: z.enum(['1h', '24h', '7d']).default('24h'),
+  vendorName: z.string().optional(),
+  vendorId: z.string().uuid().optional(),
+});
+
+export const generateUploadLink = asyncHandler(async (req: Request, res: Response) => {
+  const data = generateUploadLinkSchema.parse(req.body);
+
+  const n8nWebhookUrl = `${process.env['N8N__WEBHOOK_URL']}/send-invoice-link`;
+  if (!n8nWebhookUrl) {
+    throw new ApiError(500, 'N8N upload link webhook URL is not configured');
+  }
+
+  const secret = process.env['API_SECRET'] || 'super-secret-key';
+
+  // 1. Generate JWT token
+  const payload = {
+    vendorEmail: data.vendorEmail,
+    poNumber: data.poNumber,
+    vendorId: data.vendorId,
+    purpose: 'invoice_upload'
+  };
+
+  const token = jwt.sign(payload, secret, { expiresIn: data.expiresIn as any });
+
+  // Decode to get exact exp timestamp for the response
+  const decoded = jwt.decode(token) as { iat: number, exp: number };
+  const createdAt = new Date(decoded.iat * 1000);
+  const expiresAt = new Date(decoded.exp * 1000);
+
+  // 2. Construct the upload link
+  const frontendUrl = process.env['FRONTEND_URL'] || 'http://localhost:5173';
+  const uploadUrl = `${frontendUrl}/upload-invoice?token=${token}`;
+
+  // 3. Call n8n webhook (non-blocking)
+  let n8nResponse: any = { success: false };
+  let n8nError = null;
+
+  try {
+    const response = await fetch(n8nWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...data,
+        token,
+        uploadUrl,
+        expiresAt: expiresAt.toISOString(),
+        createdAt: createdAt.toISOString(),
+        source: 'api',
+      }),
+    });
+
+    try {
+      n8nResponse = await response.json();
+    } catch (e) {
+      n8nResponse = { success: response.ok, status: response.status };
+    }
+
+    if (!response.ok) {
+      n8nError = `N8N responded with status ${response.status}`;
+    }
+  } catch (error: any) {
+    console.error('N8N Connection Error:', error);
+    n8nError = error.message;
+  }
+
+  // 4. Log to audit
+  if (data.vendorId) {
+    await prisma.auditLog.create({
+      data: {
+        entityType: 'vendor',
+        entityId: data.vendorId,
+        eventType: 'upload_link_requested',
+        actor: 'system',
+        metadata: { ...data, token, uploadUrl, expiresAt, n8nResponse, n8nError } as any,
+      },
+    });
+  }
+
+  // 5. Return response matching GeneratedLinkMetadata
+  return res.json(new ApiResponse(200, 'Invoice upload link generated', {
+    token,
+    url: uploadUrl,
+    expiresAt: expiresAt.toISOString(),
+    createdAt: createdAt.toISOString(),
+    vendorEmail: data.vendorEmail,
+    poNumber: data.poNumber,
+    n8nStatus: {
+      sent: !n8nError,
+      response: n8nResponse,
+      error: n8nError
+    }
+  }));
+});
+
+// ─── Validate Upload Token ──────────────────────────
+export const validateUploadToken = asyncHandler(async (req: Request, res: Response) => {
+  const { token } = req.params;
+
+  if (!token) throw new ApiError(400, 'Token is required');
+
+  const secret = process.env['API_SECRET'] || 'super-secret-key';
+
+  try {
+    const decoded = jwt.verify(token as string, secret) as any;
+
+    if (decoded.purpose !== 'invoice_upload') {
+      throw new ApiError(400, 'Invalid token purpose');
+    }
+
+    return res.json(new ApiResponse(200, 'Token is valid', {
+      vendorEmail: decoded.vendorEmail,
+      poNumber: decoded.poNumber,
+      vendorId: decoded.vendorId,
+      expiresAt: new Date(decoded.exp * 1000).toISOString(),
+    }));
+  } catch (error: any) {
+    if (error.name === 'TokenExpiredError') {
+      throw new ApiError(401, 'Upload link has expired');
+    }
+    throw new ApiError(401, 'Invalid upload link');
+  }
+});
+
+// ─── Upload Invoice & Send to n8n ──────────────────
+export const uploadInvoice = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) throw new ApiError(400, 'No file uploaded');
+
+  const n8nWebhookUrl = `${process.env['N8N__WEBHOOK_URL']}/upload-invoice`;
+  if (!n8nWebhookUrl) {
+    throw new ApiError(500, 'N8N invoice processing webhook URL is not configured');
+  }
+
+  // Get metadata from body (e.g. from the validated token in frontend)
+  const { vendorEmail, poNumber, vendorId } = req.body;
+
+  // Prepare FormData for n8n
+  const formData = new FormData();
+  const blob = new Blob([new Uint8Array(req.file.buffer)], { type: req.file.mimetype });
+  formData.append('file', blob, req.file.originalname);
+  formData.append('vendorEmail', vendorEmail || '');
+  formData.append('poNumber', poNumber || '');
+  if (vendorId) formData.append('vendorId', vendorId);
+  formData.append('source', 'upload_portal');
+  formData.append('uploadedAt', new Date().toISOString());
+
+  // Call n8n (non-blocking for extraction, but we wait for n8n's ACK)
+  let n8nResponse: any = { success: false };
+  let n8nError = null;
+
+  try {
+    const response = await fetch(n8nWebhookUrl, {
+      method: 'POST',
+      body: formData,
+      // Note: Do NOT set Content-Type header manually when using FormData with fetch,
+      // it will be set automatically with the correct boundary.
+    });
+
+    try {
+      n8nResponse = await response.json();
+    } catch (e) {
+      n8nResponse = { success: response.ok, status: response.status };
+    }
+
+    if (!response.ok) {
+      n8nError = `N8N responded with status ${response.status}`;
+    }
+  } catch (error: any) {
+    console.error('N8N Processing Connection Error:', error);
+    n8nError = error.message;
+  }
+
+  // Audit Log
+  if (vendorId) {
+    await prisma.auditLog.create({
+      data: {
+        entityType: 'vendor',
+        entityId: vendorId,
+        eventType: 'invoice_uploaded',
+        actor: 'vendor',
+        metadata: {
+          fileName: req.file.originalname,
+          fileSize: req.file.size,
+          mimetype: req.file.mimetype,
+          n8nResponse,
+          n8nError
+        } as any,
+      },
+    });
+  }
+
+  return res.json(new ApiResponse(200, 'Invoice uploaded successfully and sent for processing', {
+    fileName: req.file.originalname,
+    mimetype: req.file.mimetype,
+    size: req.file.size,
+    n8nStatus: {
+      sent: !n8nError,
+      response: n8nResponse,
+      error: n8nError
+    }
+  }));
+});
+
+// ─── Generic Send Email (Trigger n8n) ─────────────
+export const sendGenericEmail = asyncHandler(async (req: Request, res: Response) => {
+  const n8nWebhookUrl = process.env['N8N__WEBHOOK_URL'];
+  if (!n8nWebhookUrl) {
+    throw new ApiError(500, 'N8N generic email webhook URL is not configured');
+  }
+
+  // Proxy the entire body to n8n – gives the user full flexibility
+  let n8nResponse: any = { success: false };
+  let n8nError = null;
+
+  try {
+    const response = await fetch(n8nWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...req.body,
+        source: 'api_generic_email',
+        sentAt: new Date().toISOString(),
+      }),
+    });
+
+    try {
+      n8nResponse = await response.json();
+    } catch (e) {
+      n8nResponse = { success: response.ok, status: response.status };
+    }
+
+    if (!response.ok) {
+      n8nError = `N8N responded with status ${response.status}`;
+    }
+  } catch (error: any) {
+    console.error('N8N Generic Email Error:', error);
+    n8nError = error.message;
+  }
+
+  return res.json(new ApiResponse(200, 'Email request forwarded to n8n', {
+    n8nStatus: {
+      sent: !n8nError,
+      response: n8nResponse,
+      error: n8nError
+    }
+  }));
+});
+
+// ─── Send Upload Link Email (Trigger n8n) ──────────
+export const sendUploadLink = asyncHandler(async (req: Request, res: Response) => {
+  const n8nWebhookUrl = `${process.env['N8N__WEBHOOK_URL']}/send-invoice-link`;
+  if (!n8nWebhookUrl) {
+    throw new ApiError(500, 'N8N upload link webhook URL is not configured');
+  }
+
+  // Forward the payload to n8n
+  let n8nResponse: any = { success: false };
+  let n8nError = null;
+  console.log(req.body);
+
+
+  try {
+    const response = await fetch(n8nWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...req.body,
+        source: 'api_resend_link',
+        sentAt: new Date().toISOString(),
+      }),
+    });
+
+    try {
+      n8nResponse = await response.json();
+    } catch (e) {
+      n8nResponse = { success: response.ok, status: response.status };
+    }
+
+    if (!response.ok) {
+      n8nError = `N8N responded with status ${response.status}`;
+    }
+  } catch (error: any) {
+    console.error('N8N Send Link Error:', error);
+    n8nError = error.message;
+  }
+
+  return res.json(new ApiResponse(200, 'Upload link email request sent to n8n', {
+    n8nStatus: {
+      sent: !n8nError,
+      response: n8nResponse,
+      error: n8nError
+    }
+  }));
+});
+
+
+
+
+
