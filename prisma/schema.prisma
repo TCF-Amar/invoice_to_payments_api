@@ -221,3 +221,16 @@ model Ticket {
 
   @@map("tickets")
 }
+
+// ─── USER ─────────────────────────────────────────────
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique @db.VarChar(255)
+  password  String   @db.VarChar(255)
+  name      String?  @db.VarChar(255)
+  role      String   @default("admin") @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("users")
+}

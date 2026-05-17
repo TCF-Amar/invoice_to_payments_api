@@ -6,8 +6,18 @@ import * as paymentCtrl from '../controllers/payment.controller.js';
 import * as stripePayoutCtrl from '../controllers/stripe.payout.controller.js';
 import * as ticketCtrl from '../controllers/ticket.controller.js';
 import { uploadMiddleware } from '../middleware/upload.middleware.js';
+import authRoutes from './auth.route.js';
 
 const router = Router();
+
+// ════════════════════════════════════════════════════
+// AUTH ROUTES
+// ════════════════════════════════════════════════════
+// POST   /api/v1/auth/register                      → register new user
+// POST   /api/v1/auth/login                         → login and get token
+// GET    /api/v1/auth/me                            → get current user profile
+
+router.use('/auth', authRoutes);
 
 // ════════════════════════════════════════════════════
 // VENDOR ROUTES

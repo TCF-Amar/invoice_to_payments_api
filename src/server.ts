@@ -24,21 +24,21 @@ app.use(express.urlencoded({ extended: true }));
 // This MUST come before routes to intercept all responses
 app.use((req, res, next) => {
   const originalJson = res.json.bind(res);
-  
-  res.json = function(data: any) {
+
+  res.json = function (data: any) {
     // Prevent infinite loop if res.json is called recursively
     if ((res as any)._isSerializing) {
       return originalJson(data);
     }
-    
+
     (res as any)._isSerializing = true;
     const serialized = serializeBigInt(data);
     const result = originalJson(serialized);
     (res as any)._isSerializing = false;
-    
+
     return result;
   };
-  
+
   next();
 });
 
@@ -78,7 +78,7 @@ const server = app.listen(PORT, () => {
   ╔═══════════════════════════════════════╗
   ║  Invoice-to-Payment API               ║
   ║  Running on: http://localhost:${PORT}    ║
-  ║  Environment: ${process.env.NODE_ENV || 'development'}         ║
+  ║  Environment: ${process.env.NODE_ENV || 'development'}             ║
   ╚═══════════════════════════════════════╝
   `);
 });
