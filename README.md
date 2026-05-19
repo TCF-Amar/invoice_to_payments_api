@@ -23,6 +23,11 @@ A comprehensive invoice management and payment processing API built with Node.js
 - **Validation**: Zod
 - **Workflow Integration**: n8n optimized endpoints
 
+## 🌿 Git Branches
+
+- **`api-v1`**: Working branch for Version 1 of the API.
+- **`api-v2`**: Current working branch (active development).
+
 ## ⚙️ Setup
 
 ### 1. Installation
