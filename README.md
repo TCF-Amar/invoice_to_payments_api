@@ -48,29 +48,79 @@ npm run db:seed
 
 ## 📚 API Endpoints
 
-### Stripe Payouts
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/payouts/stripe/setup-vendor` | Create Stripe account & get onboarding link |
-| GET | `/api/v1/payouts/stripe/onboarding-link/:vendorId` | Refresh expired onboarding link |
-| GET | `/api/v1/payouts/stripe/status/:vendorId` | Check if vendor is "Restricted" or "Enabled" |
-| POST | `/api/v1/payouts/stripe` | Initiate transfer for an approved invoice |
-| POST | `/api/v1/payouts/stripe/bulk` | Bulk payout for multiple invoices |
+All endpoints are prefixed with `/api/v1`.
 
-### Invoices
+### 🏢 Vendors
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/invoices` | List all (supports status/vendor filtering) |
-| GET | `/api/v1/invoices/approved-unpaid` | Fetch all approved invoices pending payment |
-| POST | `/api/v1/invoices` | Create invoice (after AI extraction) |
-| PATCH | `/api/v1/invoices/:id/status` | Approve/Reject invoice |
+| GET | `/vendors` | List all vendors |
+| GET | `/vendors/:id` | Get vendor by ID |
+| GET | `/vendors/by-name/:name` | Get vendor by name (n8n use) |
+| GET | `/vendors/by-email/:email` | Get vendor by email |
+| POST | `/vendors` | Create a new vendor |
+| PATCH | `/vendors/:id` | Update vendor profile |
+| DELETE | `/vendors/:id` | Delete a vendor |
 
-### Ticketing
+### 📦 Purchase Orders
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/tickets` | Raise a support ticket |
-| GET | `/api/v1/tickets` | List all tickets |
-| PATCH | `/api/v1/tickets/:id` | Update ticket status/priority |
+| GET | `/purchase-orders` | List all purchase orders |
+| GET | `/purchase-orders/:id` | Get PO by ID |
+| GET | `/purchase-orders/by-number/:poNumber` | Get PO by number (n8n use) |
+| GET | `/purchase-orders/vendor-sync/:vendorId` | PO sync for vendor-bot |
+| POST | `/purchase-orders` | Create PO (auto-creates vendor if needed) |
+| PATCH | `/purchase-orders/:id` | Update PO fields and line items |
+| PATCH | `/purchase-orders/:id/status` | Update PO status generally |
+| PATCH | `/purchase-orders/:id/submit` | Submit draft PO for approval |
+| PATCH | `/purchase-orders/:id/approve` | Approve a pending PO (Admin) |
+| PATCH | `/purchase-orders/:id/reject` | Reject a pending PO (Admin) |
+| DELETE | `/purchase-orders/:id` | Delete a PO (Draft/Rejected/Cancelled only) |
+
+### 📄 Invoices
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/invoices` | List all invoices (with status/vendor filters) |
+| GET | `/invoices/:id` | Get invoice by ID |
+| GET | `/invoices/approved-unpaid` | Get all approved invoices pending payment (n8n cron) |
+| GET | `/invoices/duplicate/:invoiceNumber` | Check for duplicate invoice numbers |
+| GET | `/invoices/by-number/:invoiceNumber` | Get invoice by number |
+| POST | `/invoices` | Create invoice (after AI parsing) |
+| PATCH | `/invoices/:id` | Update invoice |
+| PATCH | `/invoices/:id/status` | Approve/Reject invoice (n8n verdict) |
+| DELETE | `/invoices/:id` | Delete an invoice |
+| POST | `/invoices/upload-links/generate` | Generate temporary upload link token |
+| POST | `/invoices/upload-links/send` | Email upload link token to vendor |
+| GET | `/invoices/upload-links/validate/:token` | Validate temporary upload link token |
+| POST | `/invoices/upload` | Upload invoice file (multipart/form-data) |
+| POST | `/emails/send` | Send generic proxy email |
+
+### 💳 Payments
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/payments` | Get payment table data |
+| GET | `/payments/invoice/:invoiceId` | Get payments associated with an invoice |
+| POST | `/payments` | Log a new payment (triggered by Stripe Webhook) |
+| PATCH | `/payments/:id/status` | Update payment status (Stripe confirmation) |
+
+### 💸 Stripe Payouts
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/payouts/stripe/setup-vendor` | Setup Stripe Express account and onboarding link |
+| GET | `/payouts/stripe/onboarding-link/:vendorId` | Refresh expired Stripe onboarding link |
+| GET | `/payouts/stripe/status/:vendorId` | Check Stripe account status (Enabled/Restricted) |
+| POST | `/payouts/stripe` | Create Stripe transfer for an approved invoice |
+| POST | `/payouts/stripe/bulk` | Create bulk Stripe transfers for invoices |
+| POST | `/payouts/trigger` | Trigger payout automation workflow (n8n webhook) |
+
+### 🎫 Tickets (Support desk)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/tickets` | List all support tickets |
+| GET | `/tickets/:id` | Get support ticket details |
+| POST | `/tickets` | Raise a support ticket |
+| PATCH | `/tickets/:id` | Update ticket details |
+| PATCH | `/tickets/:id/status` | Resolve/update ticket status |
+
 
 ## 🔄 Vendor Payout Workflow
 
