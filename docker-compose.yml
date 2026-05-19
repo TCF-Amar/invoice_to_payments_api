@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: invoice_api_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: invoice_api
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: invoice_api_app
+    ports:
+      - "3000:3000"
+    environment:
+      # Use the db service name as the host in the DATABASE_URL
+      - DATABASE_URL=postgresql://postgres:password@db:5432/invoice_api?schema=public
+      - PORT=3000
+      - NODE_ENV=production
+      - APP_URL=http://localhost:3000
+      - FRONTEND_URL=http://localhost:5173 # Default typical frontend port, adjust if needed
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - API_SECRET=${API_SECRET}
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

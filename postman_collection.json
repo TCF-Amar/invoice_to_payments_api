@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "7f6e5d4c-3b2a-1a0b-9c8d-7e6f5d4c3b2a",
 		"name": "Invoice-to-Payment API",
-		"description": "API for managing vendors, purchase orders, invoices, and payments.",
+		"description": "API for managing vendors, purchase orders, invoices, payments, stripe payouts, and support tickets. Requires `x-api-key` header for authentication.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -19,7 +19,8 @@
 					"path": [
 						"health"
 					]
-				}
+				},
+				"description": "Public endpoint to check if the API is running successfully."
 			}
 		},
 		{
@@ -29,14 +30,53 @@
 					"name": "Get All Vendors",
 					"request": {
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
 						"url": {
-							"raw": "{{api_url}}/vendors",
+							"raw": "{{api_url}}/vendors?page=1&limit=10",
 							"host": [
 								"{{api_url}}"
 							],
 							"path": [
 								"vendors"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Vendor By ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/vendors/PASTE_VENDOR_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"vendors",
+								"PASTE_VENDOR_ID_HERE"
 							]
 						}
 					}
@@ -45,7 +85,13 @@
 					"name": "Get Vendor By Name",
 					"request": {
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
 						"url": {
 							"raw": "{{api_url}}/vendors/by-name/Acme Supplies Ltd.",
 							"host": [
@@ -60,10 +106,39 @@
 					}
 				},
 				{
+					"name": "Get Vendor By Email",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/vendors/by-email/billing@acme.com",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"vendors",
+								"by-email",
+								"billing@acme.com"
+							]
+						}
+					}
+				},
+				{
 					"name": "Create Vendor",
 					"request": {
 						"method": "POST",
 						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
 							{
 								"key": "Content-Type",
 								"value": "application/json"
@@ -71,7 +146,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"name\": \"Global Tech Solutions\",\n  \"email\": \"billing@globaltech.com\",\n  \"phone\": \"+1-202-555-0199\",\n  \"address\": \"456 Tech Park, San Francisco CA 94103\"\n}"
+							"raw": "{\n  \"name\": \"Global Tech Solutions\",\n  \"email\": \"billing@globaltech.com\",\n  \"phone\": \"+1-202-555-0199\",\n  \"address\": \"456 Tech Park, San Francisco CA 94103\",\n  \"bankName\": \"Silicon Valley Bank\",\n  \"accountName\": \"Global Tech Solutions Inc\",\n  \"accountNumber\": \"9876543210\",\n  \"routingNumber\": \"121140399\"\n}"
 						},
 						"url": {
 							"raw": "{{api_url}}/vendors",
@@ -80,6 +155,60 @@
 							],
 							"path": [
 								"vendors"
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Vendor",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"new_billing@globaltech.com\",\n  \"phone\": \"+1-202-555-0200\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/vendors/PASTE_VENDOR_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"vendors",
+								"PASTE_VENDOR_ID_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Vendor",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/vendors/PASTE_VENDOR_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"vendors",
+								"PASTE_VENDOR_ID_HERE"
 							]
 						}
 					}
@@ -93,14 +222,57 @@
 					"name": "Get All POs",
 					"request": {
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
 						"url": {
-							"raw": "{{api_url}}/purchase-orders",
+							"raw": "{{api_url}}/purchase-orders?status=open&page=1&limit=10",
 							"host": [
 								"{{api_url}}"
 							],
 							"path": [
 								"purchase-orders"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "open"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get PO By ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/purchase-orders/PASTE_PO_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders",
+								"PASTE_PO_ID_HERE"
 							]
 						}
 					}
@@ -109,7 +281,13 @@
 					"name": "Get PO By Number",
 					"request": {
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
 						"url": {
 							"raw": "{{api_url}}/purchase-orders/by-number/PO-445",
 							"host": [
@@ -124,10 +302,39 @@
 					}
 				},
 				{
-					"name": "Create PO",
+					"name": "Get Vendor PO Sync",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/purchase-orders/vendor-sync/PASTE_VENDOR_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders",
+								"vendor-sync",
+								"PASTE_VENDOR_ID_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Create PO (Existing Vendor)",
 					"request": {
 						"method": "POST",
 						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
 							{
 								"key": "Content-Type",
 								"value": "application/json"
@@ -135,7 +342,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"poNumber\": \"PO-999\",\n  \"vendorId\": \"PASTE_VENDOR_ID_HERE\",\n  \"approvedAmount\": 5000,\n  \"currency\": \"USD\",\n  \"description\": \"Server components\"\n}"
+							"raw": "{\n  \"poNumber\": \"PO-2026-001\",\n  \"vendorId\": \"PASTE_VENDOR_ID_HERE\",\n  \"approvedAmount\": 5000,\n  \"taxRate\": 18,\n  \"taxAmount\": 900,\n  \"currency\": \"USD\",\n  \"description\": \"Server components and cables\",\n  \"deliveryDate\": \"2026-06-30\",\n  \"lineItems\": [\n    {\n      \"description\": \"Server Rack Case\",\n      \"qty\": 2,\n      \"unitPrice\": 1500,\n      \"total\": 3000\n    },\n    {\n      \"description\": \"Category 6 Ethernet Cables\",\n      \"qty\": 100,\n      \"unitPrice\": 20,\n      \"total\": 2000\n    }\n  ],\n  \"status\": \"draft\"\n}"
 						},
 						"url": {
 							"raw": "{{api_url}}/purchase-orders",
@@ -147,6 +354,207 @@
 							]
 						}
 					}
+				},
+				{
+					"name": "Create PO (Auto-Create Vendor)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"poNumber\": \"PO-2026-002\",\n  \"vendor\": {\n    \"name\": \"Apex Tech Distributors\",\n    \"email\": \"orders@apextech.com\",\n    \"phone\": \"+1-800-555-1234\",\n    \"address\": \"789 Warehouse Lane, Dallas TX 75201\"\n  },\n  \"approvedAmount\": 1500,\n  \"currency\": \"USD\",\n  \"description\": \"Network switches\",\n  \"lineItems\": [\n    {\n      \"description\": \"8-Port Gigabit Switch\",\n      \"qty\": 10,\n      \"unitPrice\": 150,\n      \"total\": 1500\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/purchase-orders",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders"
+							]
+						}
+					}
+				},
+				{
+					"name": "Update PO Fields & Line Items",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"description\": \"Updated description with nested line item sync\",\n  \"approvedAmount\": 5500,\n  \"lineItems\": [\n    {\n      \"id\": \"PASTE_EXISTING_LINE_ITEM_UUID_HERE\",\n      \"description\": \"Server Rack Case (High Quality)\",\n      \"qty\": 2,\n      \"unitPrice\": 1750,\n      \"total\": 3500\n    },\n    {\n      \"description\": \"Added a brand new fiber optic cable line\",\n      \"qty\": 10,\n      \"unitPrice\": 200,\n      \"total\": 2000\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/purchase-orders/PASTE_PO_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders",
+								"PASTE_PO_ID_HERE"
+							]
+						},
+						"description": "Uses our advanced atomic transaction logic to update the PO details, update existing line items, delete omitted line items, and add new ones in one single operation."
+					}
+				},
+				{
+					"name": "Update PO Status (Generic)",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"partial\",\n  \"reason\": \"Partial delivery of switches completed\",\n  \"actor\": \"admin\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/purchase-orders/PASTE_PO_ID_HERE/status",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders",
+								"PASTE_PO_ID_HERE",
+								"status"
+							]
+						}
+					}
+				},
+				{
+					"name": "Submit PO for Approval",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/purchase-orders/PASTE_PO_ID_HERE/submit",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders",
+								"PASTE_PO_ID_HERE",
+								"submit"
+							]
+						},
+						"description": "Transitions PO from 'draft' to 'pending_approval'."
+					}
+				},
+				{
+					"name": "Approve PO",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/purchase-orders/PASTE_PO_ID_HERE/approve",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders",
+								"PASTE_PO_ID_HERE",
+								"approve"
+							]
+						},
+						"description": "Transitions PO from 'pending_approval' to 'approved' (Admin action)."
+					}
+				},
+				{
+					"name": "Reject PO",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Approved amount exceeds remaining vendor budget limit\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/purchase-orders/PASTE_PO_ID_HERE/reject",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders",
+								"PASTE_PO_ID_HERE",
+								"reject"
+							]
+						},
+						"description": "Transitions PO from 'pending_approval' to 'rejected' (Requires a reason)."
+					}
+				},
+				{
+					"name": "Delete PO",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/purchase-orders/PASTE_PO_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"purchase-orders",
+								"PASTE_PO_ID_HERE"
+							]
+						},
+						"description": "Deletes a PO. Only allowed if PO status is 'draft', 'rejected', or 'cancelled'."
+					}
 				}
 			]
 		},
@@ -157,7 +565,158 @@
 					"name": "Get All Invoices",
 					"request": {
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/invoices?page=1&limit=10",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Invoice By ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/invoices/PASTE_INVOICE_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices",
+								"PASTE_INVOICE_ID_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Invoice By Number",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/invoices/by-number/INV-2024-001",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices",
+								"by-number",
+								"INV-2024-001"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Approved Unpaid Invoices",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/invoices/approved-unpaid?page=1&limit=50",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices",
+								"approved-unpaid"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "50"
+								}
+							]
+						},
+						"description": "Used by n8n workflows/cron jobs to pick up approved invoices and trigger payments."
+					}
+				},
+				{
+					"name": "Check Duplicate Invoice",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/invoices/duplicate/INV-2024-001",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices",
+								"duplicate",
+								"INV-2024-001"
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Invoice",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"invoiceNumber\": \"INV-2026-001\",\n  \"poNumber\": \"PO-2026-001\",\n  \"vendorName\": \"Global Tech Solutions\",\n  \"vendorEmail\": \"billing@globaltech.com\",\n  \"totalAmount\": 3000,\n  \"currency\": \"USD\",\n  \"invoiceDate\": \"2026-05-18\",\n  \"dueDate\": \"2026-06-18\",\n  \"lineItems\": [\n    {\n      \"description\": \"Server Rack Case\",\n      \"qty\": 2,\n      \"unitPrice\": 1500,\n      \"total\": 3000\n    }\n  ]\n}"
+						},
 						"url": {
 							"raw": "{{api_url}}/invoices",
 							"host": [
@@ -170,10 +729,15 @@
 					}
 				},
 				{
-					"name": "Create Invoice",
+					"name": "Update Invoice",
 					"request": {
-						"method": "POST",
+						"method": "PATCH",
 						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
 							{
 								"key": "Content-Type",
 								"value": "application/json"
@@ -181,15 +745,691 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"invoiceNumber\": \"INV-2024-001\",\n  \"poNumber\": \"PO-445\",\n  \"vendorName\": \"Acme Supplies Ltd.\",\n  \"totalAmount\": 2500,\n  \"currency\": \"USD\",\n  \"invoiceDate\": \"2024-05-10\",\n  \"lineItems\": [\n    {\n      \"description\": \"Monitor 27 inch\",\n      \"qty\": 5,\n      \"unitPrice\": 400,\n      \"total\": 2000\n    },\n    {\n      \"description\": \"HDMI Cables\",\n      \"qty\": 10,\n      \"unitPrice\": 50,\n      \"total\": 500\n    }\n  ]\n}"
+							"raw": "{\n  \"dueDate\": \"2026-06-25\",\n  \"notes\": \"Urgent payment requested\"\n}"
 						},
 						"url": {
-							"raw": "{{api_url}}/invoices",
+							"raw": "{{api_url}}/invoices/PASTE_INVOICE_ID_HERE",
 							"host": [
 								"{{api_url}}"
 							],
 							"path": [
-								"invoices"
+								"invoices",
+								"PASTE_INVOICE_ID_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Invoice Status (Verdict)",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"approved\",\n  \"rejectionReason\": \"\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/invoices/PASTE_INVOICE_ID_HERE/status",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices",
+								"PASTE_INVOICE_ID_HERE",
+								"status"
+							]
+						},
+						"description": "Triggered by human approval step or n8n automated matcher. Allowed statuses: received, matching, pending_approval, approved, rejected, void."
+					}
+				},
+				{
+					"name": "Delete Invoice",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/invoices/PASTE_INVOICE_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices",
+								"PASTE_INVOICE_ID_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Generate Upload Link",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"vendorId\": \"PASTE_VENDOR_ID_HERE\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/invoices/upload-links/generate",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices",
+								"upload-links",
+								"generate"
+							]
+						},
+						"description": "Generates a unique upload token that gives secure portal access to the vendor."
+					}
+				},
+				{
+					"name": "Send Upload Link Email",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"vendorId\": \"PASTE_VENDOR_ID_HERE\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/invoices/upload-links/send",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices",
+								"upload-links",
+								"send"
+							]
+						},
+						"description": "Triggers n8n to email the secure invoice upload link directly to the vendor."
+					}
+				},
+				{
+					"name": "Validate Upload Token",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/invoices/upload-links/validate/PASTE_TOKEN_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices",
+								"upload-links",
+								"validate",
+								"PASTE_TOKEN_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Upload Invoice PDF File",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "invoice",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "vendorId",
+									"value": "PASTE_VENDOR_ID_HERE",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{api_url}}/invoices/upload",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"invoices",
+								"upload"
+							]
+						},
+						"description": "Exposes an endpoint to upload physical PDF invoices."
+					}
+				},
+				{
+					"name": "Send Generic Email via N8N",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"to\": \"vendor@example.com\",\n  \"subject\": \"Invoice Rejected\",\n  \"body\": \"Your invoice INV-999 was rejected because line items did not match PO-445.\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/emails/send",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"emails",
+								"send"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Payments",
+			"item": [
+				{
+					"name": "Get All Payments",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/payments?page=1&limit=10",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"payments"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Exposes pagination, filter, and table layout data of all recorded payouts."
+					}
+				},
+				{
+					"name": "Get Payments By Invoice ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/payments/invoice/PASTE_INVOICE_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"payments",
+								"invoice",
+								"PASTE_INVOICE_ID_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Payment (Webhook style)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"invoiceId\": \"PASTE_INVOICE_ID_HERE\",\n  \"amount\": 3000,\n  \"currency\": \"USD\",\n  \"stripePaymentId\": \"py_1234567890\",\n  \"scheduledDate\": \"2026-05-18\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/payments",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"payments"
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Payment Status",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"completed\",\n  \"failureReason\": \"\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/payments/PASTE_PAYMENT_ID_HERE/status",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"payments",
+								"PASTE_PAYMENT_ID_HERE",
+								"status"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Stripe Payouts",
+			"item": [
+				{
+					"name": "Setup Vendor Stripe Express Account",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"vendorId\": \"PASTE_VENDOR_ID_HERE\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/payouts/stripe/setup-vendor",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"payouts",
+								"stripe",
+								"setup-vendor"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Stripe Onboarding Link",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/payouts/stripe/onboarding-link/PASTE_VENDOR_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"payouts",
+								"stripe",
+								"onboarding-link",
+								"PASTE_VENDOR_ID_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Check Vendor Stripe Onboarding Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/payouts/stripe/status/PASTE_VENDOR_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"payouts",
+								"stripe",
+								"status",
+								"PASTE_VENDOR_ID_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Stripe Payout Transfer",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"paymentId\": \"PASTE_PAYMENT_ID_HERE\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/payouts/stripe",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"payouts",
+								"stripe"
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Bulk Stripe Payouts",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"paymentIds\": [\n    \"PASTE_PAYMENT_ID_1\",\n    \"PASTE_PAYMENT_ID_2\"\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/payouts/stripe/bulk",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"payouts",
+								"stripe",
+								"bulk"
+							]
+						}
+					}
+				},
+				{
+					"name": "Trigger N8N Bulk Payout Action",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"paymentIds\": [\n    \"PASTE_PAYMENT_ID_1\",\n    \"PASTE_PAYMENT_ID_2\"\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/payouts/trigger",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"payouts",
+								"trigger"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Support Tickets",
+			"item": [
+				{
+					"name": "Raise Ticket",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"subject\": \"Mismatch on Acme PO-445 Invoice\",\n  \"description\": \"The automated AI matcher flagged the total amount on INV-2024-001 ($2,500) as exceeding the approved PO total ($2,000). Please review and approve manual override.\",\n  \"priority\": \"high\",\n  \"vendorId\": \"PASTE_VENDOR_ID_HERE\",\n  \"invoiceId\": \"PASTE_INVOICE_ID_HERE\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/tickets",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"tickets"
+							]
+						}
+					}
+				},
+				{
+					"name": "List All Tickets",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/tickets?status=open&priority=high",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"tickets"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "open"
+								},
+								{
+									"key": "priority",
+									"value": "high"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Ticket By ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{api_url}}/tickets/PASTE_TICKET_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"tickets",
+								"PASTE_TICKET_ID_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Ticket Fields",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"in_progress\",\n  \"priority\": \"critical\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/tickets/PASTE_TICKET_ID_HERE",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"tickets",
+								"PASTE_TICKET_ID_HERE"
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Ticket Status",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "x-api-key",
+								"value": "{{api_key}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"resolved\"\n}"
+						},
+						"url": {
+							"raw": "{{api_url}}/tickets/PASTE_TICKET_ID_HERE/status",
+							"host": [
+								"{{api_url}}"
+							],
+							"path": [
+								"tickets",
+								"PASTE_TICKET_ID_HERE",
+								"status"
 							]
 						}
 					}
@@ -226,6 +1466,11 @@
 		{
 			"key": "api_url",
 			"value": "http://localhost:3000/api/v1",
+			"type": "string"
+		},
+		{
+			"key": "api_key",
+			"value": "sec_9f7d2b8e4a3c1f5b0d6e8a9c2b4f6e1a",
 			"type": "string"
 		}
 	]

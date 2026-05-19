@@ -88,6 +88,14 @@ const createPOSchema = z.object({
   { message: 'Provide either vendorId or a vendor object to create one automatically.' }
 );
 
+const lineItemUpdateSchema = z.object({
+  id: z.string().uuid().optional(),
+  description: z.string().min(1),
+  qty: z.coerce.number().positive(),
+  unitPrice: z.coerce.number().positive(),
+  total: z.coerce.number().positive(),
+});
+
 const updatePOSchema = z.object({
   poNumber: z.string().min(1).optional(),
   approvedAmount: z.coerce.number().positive().optional(),
@@ -96,6 +104,7 @@ const updatePOSchema = z.object({
   currency: z.string().optional(),
   description: z.string().optional(),
   deliveryDate: z.string().optional(),
+  lineItems: z.array(lineItemUpdateSchema).optional(),
 });
 
 const updateStatusSchema = z.object({
@@ -283,7 +292,7 @@ export const createPO = asyncHandler(async (req: Request, res: Response) => {
       vendor: { connect: { id: vendor.id } },
       approvedAmount: data.approvedAmount,
       remainingAmount: data.approvedAmount,
-      taxRate: data.taxRate ,
+      taxRate: data.taxRate,
       taxAmount: data.taxAmount,
       currency: data.currency,
       description: data.description,
@@ -346,25 +355,89 @@ export const createPO = asyncHandler(async (req: Request, res: Response) => {
 // ─── Update PO (fields only, no status) ──────────────────────
 export const updatePO = asyncHandler(async (req: Request, res: Response) => {
   const data = updatePOSchema.parse(req.body);
+  const poId = req.params['id'] as string;
 
-  const existing = await prisma.purchaseOrder.findUnique({ where: { id: req.params['id'] as string } });
+  const existing = await prisma.purchaseOrder.findUnique({
+    where: { id: poId },
+    include: { lineItems: true },
+  });
   if (!existing) throw new ApiError(404, 'Purchase order not found');
 
   if (['closed', 'cancelled'].includes(existing.status)) {
     throw new ApiError(400, `Cannot edit a PO in '${existing.status}' status`);
   }
 
-  const po = await prisma.purchaseOrder.update({
-    where: { id: req.params['id'] as string },
-    data: {
-      ...data,
-      deliveryDate: data.deliveryDate ? new Date(data.deliveryDate) : undefined,
-    } as any,
-    include: {
-      vendor: { select: { id: true, name: true, email: true } },
-      lineItems: true,
-    },
+  const { lineItems, ...poFields } = data;
+
+  const po = await prisma.$transaction(async (tx) => {
+    // Recalculate remainingAmount if approvedAmount is updated
+    let updatedRemaining: number | undefined = undefined;
+    if (poFields.approvedAmount !== undefined) {
+      const spentAmount = Number(existing.approvedAmount) - Number(existing.remainingAmount);
+      updatedRemaining = Math.max(0, Number(poFields.approvedAmount) - spentAmount);
+    }
+
+    // 1. Update PO fields
+    await tx.purchaseOrder.update({
+      where: { id: poId },
+      data: {
+        ...poFields,
+        remainingAmount: updatedRemaining,
+        deliveryDate: poFields.deliveryDate ? new Date(poFields.deliveryDate) : undefined,
+      } as any,
+    });
+
+    // 2. Handle line items update if provided
+    if (lineItems !== undefined) {
+      const incomingIds = lineItems
+        .map((item) => item.id)
+        .filter((id): id is string => !!id);
+
+      // Delete items not in incoming request
+      const toDelete = existing.lineItems.filter((item) => !incomingIds.includes(item.id));
+      if (toDelete.length > 0) {
+        await tx.pOLineItem.deleteMany({
+          where: { id: { in: toDelete.map((item) => item.id) } },
+        });
+      }
+
+      // Create or Update items
+      for (const item of lineItems) {
+        if (item.id) {
+          await tx.pOLineItem.update({
+            where: { id: item.id },
+            data: {
+              description: item.description,
+              qty: item.qty,
+              unitPrice: item.unitPrice,
+              total: item.total,
+            },
+          });
+        } else {
+          await tx.pOLineItem.create({
+            data: {
+              poId: poId,
+              description: item.description,
+              qty: item.qty,
+              unitPrice: item.unitPrice,
+              total: item.total,
+            },
+          });
+        }
+      }
+    }
+
+    // Return the updated PO with relations
+    return tx.purchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        vendor: { select: { id: true, name: true, email: true } },
+        lineItems: true,
+      },
+    });
   });
+
+  if (!po) throw new ApiError(500, 'Failed to update PO');
 
   await auditPO(po.id, 'po_updated', data as Record<string, unknown>);
 

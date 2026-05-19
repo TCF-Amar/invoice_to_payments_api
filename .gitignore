@@ -2,3 +2,7 @@
 node_modules
 dist
 
+create-5-pos.ts
+delete-table.ts
+get-table.ts
+update-po.ts
